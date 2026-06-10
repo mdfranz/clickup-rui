@@ -98,6 +98,57 @@ async fn run_browse_loop<A: ClickUpApi>(
         let current_task_idx = list_state.selected().unwrap_or(0);
         let current_task = tasks[current_task_idx].clone();
 
+        let needs_detail = !cached_task_details.contains_key(&current_task.id);
+        let needs_comments = !cached_comments.contains_key(&current_task.id);
+
+        if needs_detail || needs_comments {
+            terminal.draw(|f| {
+                let size = f.area();
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
+                    .split(size);
+
+                // Left Pane: Tasks List (with the newly selected highlight)
+                let items: Vec<ListItem> = tasks
+                    .iter()
+                    .map(|t| {
+                        ListItem::new(format!(
+                            "[{}] {}\n  Updated: {}",
+                            t.status.status,
+                            t.name,
+                            format_task_date(&t.date_updated)
+                        ))
+                    })
+                    .collect();
+
+                let left_list = RatatuiList::new(items)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Tasks List ")
+                            .border_style(crate::ui::styles::style_border_active()),
+                    )
+                    .highlight_style(crate::ui::styles::style_selected());
+
+                f.render_stateful_widget(left_list, chunks[0], &mut list_state);
+
+                // Right Pane: Loading Details & Comments
+                let loading_msg = format!(
+                    "\n\n   ⏳ Loading details & comments...\n\n   👉 \"{}\"\n\n   Please wait...",
+                    current_task.name
+                );
+                let right_pane = Paragraph::new(loading_msg).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Loading Task ")
+                        .border_style(crate::ui::styles::style_border_inactive()),
+                );
+
+                f.render_widget(right_pane, chunks[1]);
+            })?;
+        }
+
         // Ensure current task detail and comments are loaded
         if !cached_task_details.contains_key(&current_task.id) {
             if let Ok(detailed) = api.get_task_detail(&current_task.id).await {
