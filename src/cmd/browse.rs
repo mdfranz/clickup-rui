@@ -245,6 +245,8 @@ async fn run_browse_loop<A: ClickUpApi>(
                     Span::styled(" Change Status |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                     Span::styled(" n", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                     Span::styled(" New Task |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                    Span::styled(" r", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                    Span::styled(" Reload |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                     Span::styled(" ↑/↓ (j/k)", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                     Span::styled(" Scroll Focused Pane |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                     Span::styled(" q", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
@@ -462,6 +464,8 @@ async fn run_browse_loop<A: ClickUpApi>(
                 Span::styled(" Change Status |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" n", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" New Task |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" r", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Reload |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" ↑/↓ (j/k)", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Scroll Focused Pane |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" q", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
@@ -623,6 +627,10 @@ async fn run_browse_loop<A: ClickUpApi>(
                                 list_statuses = found_statuses;
                                 statuses_state.select(Some(0));
                                 state = BrowseState::StatusPicker;
+                            }
+                            KeyCode::Char('r') => {
+                                cached_task_details.remove(&current_task.id);
+                                cached_comments.remove(&current_task.id);
                             }
                             KeyCode::Char('n') => {
                                 crossterm::execute!(io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
