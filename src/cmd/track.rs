@@ -123,6 +123,7 @@ async fn track_user_activities<A: ClickUpApi>(
                         task_id: task.id.clone(),
                         source: "api".to_string(),
                         detail: Some(task.status.status.clone()),
+                        task_name: Some(task.name.clone()),
                     });
                 }
 
@@ -148,6 +149,7 @@ async fn track_user_activities<A: ClickUpApi>(
                             task_id: task.id.clone(),
                             source: "api".to_string(),
                             detail: Some(task.status.status.clone()),
+                            task_name: Some(task.name.clone()),
                         });
                     } else if closed_ms >= date_from {
                         activities.push(Activity {
@@ -158,6 +160,7 @@ async fn track_user_activities<A: ClickUpApi>(
                             task_id: task.id.clone(),
                             source: "api".to_string(),
                             detail: Some(task.status.status.clone()),
+                            task_name: Some(task.name.clone()),
                         });
                     } else if updated_ms >= date_from && updated_ms > created_ms {
                         activities.push(Activity {
@@ -168,6 +171,7 @@ async fn track_user_activities<A: ClickUpApi>(
                             task_id: task.id.clone(),
                             source: "api".to_string(),
                             detail: Some(task.status.status.clone()),
+                            task_name: Some(task.name.clone()),
                         });
                     }
                 }
@@ -186,6 +190,7 @@ async fn track_user_activities<A: ClickUpApi>(
                                             task_id: task.id.clone(),
                                             source: "api".to_string(),
                                             detail: Some(comment.comment_text.clone()),
+                                            task_name: Some(task.name.clone()),
                                         });
                                     }
                                 }
@@ -262,10 +267,12 @@ async fn track_user_activities<A: ClickUpApi>(
             println!("Raw Activity Log for {}:", user.username);
             for act in &activities {
                 let dt = format_comment_date(&act.date);
+                let t_name = act.task_name.as_deref().unwrap_or("Unknown Task");
                 println!(
-                    "[{}] {} [Task: {}] [Detail: {}]",
+                    "[{}] {} \"{}\" [Task: {}] [Detail: {}]",
                     dt,
                     act.type_,
+                    t_name,
                     act.task_id,
                     act.detail.as_deref().unwrap_or("N/A")
                 );
@@ -304,10 +311,12 @@ async fn run_scrollable_tui(
         let mut raw_str = String::new();
         for act in &activities {
             let dt = format_comment_date(&act.date);
+            let t_name = act.task_name.as_deref().unwrap_or("Unknown Task");
             raw_str.push_str(&format!(
-                "[{}] {} [Task: {}] [Detail: {}]\n",
+                "[{}] {} \"{}\" [Task: {}] [Detail: {}]\n",
                 dt,
                 act.type_,
+                t_name,
                 act.task_id,
                 act.detail.as_deref().unwrap_or("N/A")
             ));

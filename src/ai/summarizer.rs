@@ -51,7 +51,7 @@ impl GeminiSummarizer {
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_else(|_| Client::new()),
-            model: "gemini-1.5-flash".to_string(),
+            model: "gemini-3.5-flash".to_string(),
         }
     }
 
@@ -154,9 +154,11 @@ impl GeminiSummarizer {
     ) -> Result<String> {
         let mut info = format!("User: {}\nDay: {}\nActivities:\n", user_name, day);
         for act in activities {
+            let t_name = act.task_name.as_deref().unwrap_or("Unknown Task");
             info.push_str(&format!(
-                "- {} on task (ID: {}) via {} [Detail: {}]\n",
+                "- {} on task \"{}\" (ID: {}) via {} [Detail: {}]\n",
                 act.type_,
+                t_name,
                 act.task_id,
                 act.source,
                 act.detail.as_deref().unwrap_or("N/A")
@@ -181,9 +183,11 @@ impl GeminiSummarizer {
         for (username, activities) in user_activities {
             info.push_str(&format!("\nUser: {}\n", username));
             for act in activities {
+                let t_name = act.task_name.as_deref().unwrap_or("Unknown Task");
+                let detail_str = act.detail.as_deref().unwrap_or("N/A");
                 info.push_str(&format!(
-                    "- {} on task (ID: {}) via {}\n",
-                    act.type_, act.task_id, act.source
+                    "- {} on task \"{}\" (ID: {}) [Detail: {}] via {}\n",
+                    act.type_, t_name, act.task_id, detail_str, act.source
                 ));
             }
         }

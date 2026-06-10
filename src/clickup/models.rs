@@ -90,6 +90,7 @@ pub struct Activity {
     pub task_id: String,
     pub source: String,
     pub detail: Option<String>,
+    pub task_name: Option<String>,
 }
 
 fn deserialize_parent<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
