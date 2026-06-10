@@ -1,0 +1,4 @@
+/target
+app.log
+.env
+.DS_Store
