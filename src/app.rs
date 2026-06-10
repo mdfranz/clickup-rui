@@ -55,7 +55,7 @@ pub enum Commands {
         #[arg(long, help = "Show user IDs/emails for assignees")]
         id: bool,
     },
-    #[command(about = "Interactively browse tasks, statuses, comments")]
+    #[command(about = "Interactively browse tasks, update statuses, and add comments")]
     Browse {
         #[arg(long, short = 'a', help = "Include all open except completed/closed")]
         all: bool,
@@ -68,7 +68,7 @@ pub enum Commands {
     },
     #[command(about = "Create a new task via step-by-step TUI")]
     New,
-    #[command(about = "Interactively log daily standup updates per task")]
+    #[command(about = "Interactively log standup updates, change statuses, and add comments")]
     Standup {
         #[arg(long, short = 'a', help = "Include all open except completed/closed")]
         all: bool,
@@ -108,11 +108,28 @@ pub enum Commands {
 
         #[arg(long, short = 'c', default_value = "false", help = "Show raw events log")]
         raw: bool,
+
+        #[arg(long, help = "Output activity log to CSV file in current directory")]
+        csv: bool,
+
+        #[arg(long, help = "Output activity log to JSON file in current directory")]
+        json: bool,
     },
     #[command(about = "Manage the local database cache store")]
     Cache {
         #[command(subcommand)]
         cmd: CacheSubcommands,
+    },
+    #[command(about = "Configure AI provider, model, and other settings")]
+    Config {
+        #[arg(long, help = "AI provider (gemini or ollama)")]
+        provider: Option<String>,
+
+        #[arg(long, help = "AI model (e.g., gemini-3.5-flash, granite4.1:8b)")]
+        model: Option<String>,
+
+        #[arg(long, help = "Ollama server URL (defaults to http://localhost:11434)")]
+        ollama_url: Option<String>,
     },
     #[command(about = "Interactive delete prompt for configuration and cache files")]
     Clean,

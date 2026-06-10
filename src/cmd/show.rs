@@ -13,6 +13,10 @@ pub async fn run_show<A: ClickUpApi>(api: &A) -> Result<()> {
             for f in &cfg.folders {
                 println!("    - {} ({})", f.name, f.id);
             }
+            println!("  AI Settings:");
+            println!("    Provider:   {}", cfg.ai_provider);
+            println!("    Model:      {}", cfg.ai_model);
+            println!("    Ollama URL: {}", cfg.ollama_url);
         }
         Err(_) => {
             println!("No configuration found. Run 'clickup-rui setup' first.");

@@ -253,6 +253,7 @@ async fn run_scrollable_tui(
     loop {
         terminal.draw(|f| {
             let size = f.area();
+            crate::ui::styles::render_background(f);
             let block = Block::default()
                 .title(" Team Status Summary (use Arrow Up/Down or j/k to scroll, Q to quit) ")
                 .borders(Borders::ALL)

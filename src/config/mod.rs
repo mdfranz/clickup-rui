@@ -11,6 +11,18 @@ pub struct FolderConfig {
     pub name: String,
 }
 
+fn default_ai_provider() -> String {
+    "gemini".to_string()
+}
+
+fn default_ai_model() -> String {
+    "gemini-3.5-flash".to_string()
+}
+
+fn default_ollama_url() -> String {
+    "http://localhost:11434".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub workspace_id: String,
@@ -18,6 +30,15 @@ pub struct Config {
     pub space_id: String,
     pub space_name: String,
     pub folders: Vec<FolderConfig>,
+
+    #[serde(default = "default_ai_provider")]
+    pub ai_provider: String,
+
+    #[serde(default = "default_ai_model")]
+    pub ai_model: String,
+
+    #[serde(default = "default_ollama_url")]
+    pub ollama_url: String,
 }
 
 impl Config {
@@ -104,6 +125,9 @@ mod tests {
                 id: "f789".to_string(),
                 name: "My Folder".to_string(),
             }],
+            ai_provider: default_ai_provider(),
+            ai_model: default_ai_model(),
+            ollama_url: default_ollama_url(),
         };
 
         // Save
@@ -118,6 +142,9 @@ mod tests {
         assert_eq!(loaded.folders.len(), 1);
         assert_eq!(loaded.folders[0].id, "f789");
         assert_eq!(loaded.folders[0].name, "My Folder");
+        assert_eq!(loaded.ai_provider, "gemini");
+        assert_eq!(loaded.ai_model, "gemini-3.5-flash");
+        assert_eq!(loaded.ollama_url, "http://localhost:11434");
 
         // Clean up env
         match original_xdg {
@@ -150,6 +177,9 @@ mod tests {
             space_id: "legacy_s".to_string(),
             space_name: "Legacy S".to_string(),
             folders: vec![],
+            ai_provider: default_ai_provider(),
+            ai_model: default_ai_model(),
+            ollama_url: default_ollama_url(),
         };
 
         let content = toml::to_string_pretty(&cfg).unwrap();

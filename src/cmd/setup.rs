@@ -5,6 +5,7 @@ use crate::util::errors::{AppError, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
 use std::collections::HashSet;
@@ -75,6 +76,7 @@ async fn run_setup_loop<A: ClickUpApi>(
     loop {
         terminal.draw(|f| {
             let size = f.area();
+            crate::ui::styles::render_background(f);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -104,7 +106,10 @@ async fn run_setup_loop<A: ClickUpApi>(
                 SetupStep::SelectWorkspace => {
                     let items: Vec<ListItem> = teams
                         .iter()
-                        .map(|t| ListItem::new(format!("  {} (ID: {})", t.name, t.id)))
+                        .map(|t| {
+                            ListItem::new(format!("  {} (ID: {})", t.name, t.id))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        })
                         .collect();
                     let list = List::new(items)
                         .block(
@@ -113,13 +118,17 @@ async fn run_setup_loop<A: ClickUpApi>(
                                 .border_style(crate::ui::styles::style_border_active())
                                 .title(" Workspaces "),
                         )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut workspaces_state);
                 }
                 SetupStep::SelectSpace => {
                     let items: Vec<ListItem> = spaces
                         .iter()
-                        .map(|s| ListItem::new(format!("  {} (ID: {})", s.name, s.id)))
+                        .map(|s| {
+                            ListItem::new(format!("  {} (ID: {})", s.name, s.id))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        })
                         .collect();
                     let list = List::new(items)
                         .block(
@@ -128,6 +137,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                                 .border_style(crate::ui::styles::style_border_active())
                                 .title(" Spaces "),
                         )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut spaces_state);
                 }
@@ -141,6 +151,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                                 "[ ]"
                             };
                             ListItem::new(format!("  {} {} (ID: {})", checked, fol.name, fol.id))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         })
                         .collect();
                     let list = List::new(items)
@@ -150,6 +161,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                                 .border_style(crate::ui::styles::style_border_active())
                                 .title(" Folders "),
                         )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut folders_state);
                 }
@@ -166,7 +178,7 @@ async fn run_setup_loop<A: ClickUpApi>(
             };
             let help = Paragraph::new(help_text)
                 .block(Block::default().borders(Borders::TOP))
-                .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_MUTED));
+                .style(Style::default().fg(crate::ui::styles::COLOR_MUTED).bg(crate::ui::styles::COLOR_BG));
             f.render_widget(help, chunks[2]);
         })?;
 
@@ -275,12 +287,21 @@ async fn run_setup_loop<A: ClickUpApi>(
                                     // At least one folder should be selected ideally, or allow empty but warn
                                 }
 
+                                let (ai_provider, ai_model, ollama_url) = if let Ok(existing) = Config::load() {
+                                    (existing.ai_provider, existing.ai_model, existing.ollama_url)
+                                } else {
+                                    ("gemini".to_string(), "gemini-3.5-flash".to_string(), "http://localhost:11434".to_string())
+                                };
+
                                 let cfg = Config {
                                     workspace_id: ws.id.clone(),
                                     workspace_name: ws.name.clone(),
                                     space_id: sp.id.clone(),
                                     space_name: sp.name.clone(),
                                     folders: config_folders.clone(),
+                                    ai_provider,
+                                    ai_model,
+                                    ollama_url,
                                 };
                                 cfg.save()?;
 

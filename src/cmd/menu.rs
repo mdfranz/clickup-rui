@@ -4,7 +4,9 @@ use crate::util::env::set_menu_mode;
 use crate::util::errors::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
 use std::io;
@@ -12,29 +14,10 @@ use std::io;
 pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
     let menu_options = vec![
         (
-            "Tasks List View",
-            Commands::Tasks {
-                all: false,
-                detailed: false,
-                summarize: false,
-                team: false,
-                mine: true,
-                id: false,
-            },
-        ),
-        (
             "Browse Interactive View",
             Commands::Browse {
                 all: false,
                 team: false,
-                mine: true,
-            },
-        ),
-        ("Create New Task", Commands::New),
-        (
-            "Log Daily Standup Updates",
-            Commands::Standup {
-                all: false,
                 mine: true,
             },
         ),
@@ -44,14 +27,16 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
                 user_id: None,
                 summarize: false,
                 raw: false,
+                csv: false,
+                json: false,
             },
         ),
+        ("Create New Task", Commands::New),
         (
-            "View Team Status Summary",
-            Commands::TeamStatus {
-                days: 7,
-                summarize: true,
-                raw: false,
+            "Log Daily Standup Updates",
+            Commands::Standup {
+                all: false,
+                mine: true,
             },
         ),
         ("Interactive setup", Commands::Setup),
@@ -74,35 +59,73 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
     loop {
         terminal.draw(|f| {
             let size = f.area();
+            crate::ui::styles::render_background(f);
+
+            // Dynamic layout calculations based on terminal size to prevent clipping/overflows
+            let show_banner = size.width >= 65 && size.height >= 20;
+            let margin_val = if size.height < 14 || size.width < 65 {
+                0
+            } else if size.height < 23 || size.width < 80 {
+                1
+            } else {
+                2
+            };
+
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .margin(2)
+                .margin(margin_val)
                 .constraints(
-                    [
-                        Constraint::Length(4), // App Banner
-                        Constraint::Min(5),    // Menu List
-                        Constraint::Length(3), // Footer Help
-                    ]
+                    if show_banner {
+                        [
+                            Constraint::Length(7), // ASCII Art App Banner
+                            Constraint::Min(5),    // Menu List
+                            Constraint::Length(2), // Footer Help (with top border)
+                        ]
+                    } else {
+                        [
+                            Constraint::Length(2), // Slim App Banner (Title + spacer)
+                            Constraint::Min(3),    // Menu List
+                            Constraint::Length(1), // Footer Help (plain)
+                        ]
+                    }
                     .as_ref(),
                 )
                 .split(size);
-            /*
-                        let banner = "   __   __   _              _   _      _____ _   _ _____
-              / _| / /  (_) ___ _ __   | | | |    |_   _| | | |_   _|
-             | |  / /   | |/ __| '_ \\  | | | |______|_| | | | | |_| |
-             | |_/ /____| | (__| |_) | | |_| |______| | | |_| |  | |
-              \\__\\_____/|_|\\___| .__/   \\___/       |_|  \\___/   |_|
-                               |_|                                    ";
 
-                        f.render_widget(
-                            Paragraph::new(banner)
-                                .style(crate::ui::styles::style_title()),
-                            chunks[0],
-                        );
-            */
+            if show_banner {
+                let banner = r#"   __   __   _              _   _      _____ _   _ _____
+  / _| / /  (_) ___ _ __   | | | |    |_   _| | | |_   _|
+ | |  / /   | |/ __| '_ \  | | | |______|_| | | | | |_| |
+ | |_/ /____| | (__| |_) | | |_| |______| | | |_| |  | |
+  \__\_____/|_|\___| .__/   \___/       |_|  \___/   |_|
+                   |_|                                   "#;
+
+                f.render_widget(
+                    Paragraph::new(banner)
+                        .style(crate::ui::styles::style_title())
+                        .alignment(Alignment::Center),
+                    chunks[0],
+                );
+            } else {
+                let title_span = Span::styled(
+                    "⚡ CLICKUP CLI/TUI MENU ⚡",
+                    crate::ui::styles::style_title(),
+                );
+                f.render_widget(
+                    Paragraph::new(Line::from(vec![title_span])).alignment(Alignment::Center),
+                    chunks[0],
+                );
+            }
+
             let items: Vec<ListItem> = menu_options
                 .iter()
-                .map(|(label, _)| ListItem::new(format!("  •  {}", label)))
+                .map(|(label, _)| {
+                    ListItem::new(format!("  •  {}", label)).style(
+                        Style::default()
+                            .fg(crate::ui::styles::COLOR_FG)
+                            .bg(crate::ui::styles::COLOR_BG),
+                    )
+                })
                 .collect();
 
             let menu_list = List::new(items)
@@ -116,11 +139,47 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
 
             f.render_stateful_widget(menu_list, chunks[1], &mut list_state);
 
-            let help = Paragraph::new(
-                "Arrow Up/Down or j/k: navigate | Enter: execute subcommand | q: quit",
-            )
-            .block(Block::default().borders(Borders::TOP))
-            .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_MUTED));
+            let help_line = Line::from(vec![
+                Span::styled(
+                    " ↑/↓ (j/k)",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::ui::styles::COLOR_PRIMARY),
+                ),
+                Span::styled(
+                    " Navigate  |  ",
+                    Style::default().fg(crate::ui::styles::COLOR_FG),
+                ),
+                Span::styled(
+                    "Enter",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::ui::styles::COLOR_PRIMARY),
+                ),
+                Span::styled(
+                    " Execute  |  ",
+                    Style::default().fg(crate::ui::styles::COLOR_FG),
+                ),
+                Span::styled(
+                    "q / Esc",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::ui::styles::COLOR_PRIMARY),
+                ),
+                Span::styled(" Quit", Style::default().fg(crate::ui::styles::COLOR_FG)),
+            ]);
+
+            let help = if show_banner {
+                Paragraph::new(help_line)
+                    .alignment(Alignment::Center)
+                    .block(
+                        Block::default()
+                            .borders(Borders::TOP)
+                            .border_style(Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                    )
+            } else {
+                Paragraph::new(help_line).alignment(Alignment::Center)
+            };
             f.render_widget(help, chunks[2]);
         })?;
 

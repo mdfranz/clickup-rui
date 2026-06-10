@@ -68,7 +68,7 @@ async fn main() {
 
     // 6. Check if PAT is required and retrieve it
     let pat_required = match &command {
-        Commands::Cache { .. } | Commands::Clean => false,
+        Commands::Cache { .. } | Commands::Clean | Commands::Config { .. } => false,
         Commands::Show => false, // Show will try to fetch if PAT available but won't hard fail
         _ => true,
     };

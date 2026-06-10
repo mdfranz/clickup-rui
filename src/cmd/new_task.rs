@@ -5,7 +5,8 @@ use crate::util::errors::{AppError, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Paragraph};
+use ratatui::style::Style;
+use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
 use ratatui::Terminal;
 use std::io;
 
@@ -91,10 +92,35 @@ async fn run_new_task_loop<A: ClickUpApi>(
     let mut selected_folder: Option<Folder> = None;
     let mut selected_list: Option<ClickUpList> = None;
     let mut selected_status: Option<Status> = None;
+    let mut assignee_filter = String::new();
 
     loop {
+        let filtered_users: Vec<&User> = if step == NewTaskStep::AssigneeSelect {
+            workspace_users
+                .iter()
+                .filter(|u| {
+                    if assignee_filter.is_empty() {
+                        true
+                    } else {
+                        u.username.to_lowercase().contains(&assignee_filter.to_lowercase())
+                            || u.email.to_lowercase().contains(&assignee_filter.to_lowercase())
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        if step == NewTaskStep::AssigneeSelect {
+            let current_selected = users_state.selected().unwrap_or(0);
+            if current_selected > filtered_users.len() {
+                users_state.select(Some(filtered_users.len()));
+            }
+        }
+
         terminal.draw(|f| {
             let size = f.area();
+            crate::ui::styles::render_background(f);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -132,72 +158,162 @@ async fn run_new_task_loop<A: ClickUpApi>(
                 NewTaskStep::FolderSelect => {
                     let items: Vec<ListItem> = folders
                         .iter()
-                        .map(|fol| ListItem::new(format!("  {}", fol.name)))
+                        .map(|fol| {
+                            ListItem::new(format!("  {}", fol.name))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        })
                         .collect();
                     let list = RatatuiList::new(items)
                         .block(Block::default().borders(Borders::ALL).title(" Folders "))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut folders_state);
                 }
                 NewTaskStep::ListSelect => {
                     let items: Vec<ListItem> = lists
                         .iter()
-                        .map(|l| ListItem::new(format!("  {}", l.name)))
+                        .map(|l| {
+                            ListItem::new(format!("  {}", l.name))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        })
                         .collect();
                     let list = RatatuiList::new(items)
                         .block(Block::default().borders(Borders::ALL).title(" Lists "))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut lists_state);
                 }
                 NewTaskStep::StatusSelect => {
                     let items: Vec<ListItem> = statuses
                         .iter()
-                        .map(|s| ListItem::new(format!("  {}", s.status)))
+                        .map(|s| {
+                            ListItem::new(format!("  {}", s.status))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        })
                         .collect();
                     let list = RatatuiList::new(items)
                         .block(Block::default().borders(Borders::ALL).title(" Statuses "))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut statuses_state);
                 }
                 NewTaskStep::NameInput => {
-                    let p = Paragraph::new(name.as_str()).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .border_style(crate::ui::styles::style_border_active())
-                            .title(" Enter Task Name "),
-                    );
+                    let p = Paragraph::new(name.as_str())
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .border_style(crate::ui::styles::style_border_active())
+                                .title(" Enter Task Name ")
+                                .padding(Padding::new(2, 2, 1, 1)),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
+
+                    // Dynamic cursor placement tracking current length and wrapped lines
+                    let lines: Vec<&str> = name.split('\n').collect();
+                    let last_line = lines.last().copied().unwrap_or("");
+                    let last_line_len = last_line.chars().count();
+
+                    let inner_width = (chunks[1].width as usize).saturating_sub(6);
+                    let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
+                    let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
+
+                    let cursor_y = chunks[1].y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
+                    let cursor_x = chunks[1].x + 3 + extra_x as u16;
+
+                    let safe_cursor_x = cursor_x.min(chunks[1].x + chunks[1].width.saturating_sub(2));
+                    let safe_cursor_y = cursor_y.min(chunks[1].y + chunks[1].height.saturating_sub(2));
+
+                    f.set_cursor_position(ratatui::layout::Position::new(safe_cursor_x, safe_cursor_y));
                 }
                 NewTaskStep::DescriptionInput => {
-                    let p = Paragraph::new(description.as_str()).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .border_style(crate::ui::styles::style_border_active())
-                            .title(" Enter Description "),
-                    );
+                    let p = Paragraph::new(description.as_str())
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .border_style(crate::ui::styles::style_border_active())
+                                .title(" Enter Description ")
+                                .padding(Padding::new(2, 2, 1, 1)),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
+
+                    // Dynamic cursor placement tracking current length and wrapped lines
+                    let lines: Vec<&str> = description.split('\n').collect();
+                    let last_line = lines.last().copied().unwrap_or("");
+                    let last_line_len = last_line.chars().count();
+
+                    let inner_width = (chunks[1].width as usize).saturating_sub(6);
+                    let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
+                    let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
+
+                    let cursor_y = chunks[1].y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
+                    let cursor_x = chunks[1].x + 3 + extra_x as u16;
+
+                    let safe_cursor_x = cursor_x.min(chunks[1].x + chunks[1].width.saturating_sub(2));
+                    let safe_cursor_y = cursor_y.min(chunks[1].y + chunks[1].height.saturating_sub(2));
+
+                    f.set_cursor_position(ratatui::layout::Position::new(safe_cursor_x, safe_cursor_y));
                 }
                 NewTaskStep::AssigneePrompt => {
                     let text = format!(
                         "Would you like to assign this task to yourself ({})?\n\nPress 'y' for Yes, 'n' to select another workspace user.",
                         current_user.username
                     );
-                    let p = Paragraph::new(text).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Assignee Prompt "),
-                    );
+                    let p = Paragraph::new(text)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Assignee Prompt "),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
                 }
                 NewTaskStep::AssigneeSelect => {
-                    let mut items = vec![ListItem::new("  Unassigned")];
-                    for u in &workspace_users {
-                        items.push(ListItem::new(format!("  {} ({})", u.username, u.email)));
+                    let assignee_chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(3), // Filter input box
+                            Constraint::Min(3),    // Users list
+                        ])
+                        .split(chunks[1]);
+
+                    let search_block = Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Filter (Type to search, Backspace to delete) ")
+                        .border_style(crate::ui::styles::style_border_active())
+                        .padding(Padding::new(2, 2, 0, 0));
+
+                    f.render_widget(
+                        Paragraph::new(assignee_filter.as_str())
+                            .block(search_block)
+                            .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
+                        assignee_chunks[0],
+                    );
+
+                    // Dynamic cursor placement matching user's typing
+                    let cursor_x = assignee_chunks[0].x + 3 + assignee_filter.chars().count() as u16;
+                    let cursor_y = assignee_chunks[0].y + 1;
+                    let safe_cursor_x = cursor_x.min(assignee_chunks[0].x + assignee_chunks[0].width.saturating_sub(3));
+                    let safe_cursor_y = cursor_y.min(assignee_chunks[0].y + assignee_chunks[0].height.saturating_sub(2));
+                    f.set_cursor_position(ratatui::layout::Position::new(safe_cursor_x, safe_cursor_y));
+
+                    let mut items = vec![
+                        ListItem::new("  Unassigned")
+                            .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    ];
+                    for u in &filtered_users {
+                        items.push(
+                            ListItem::new(format!("  {} ({})", u.username, u.email))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        );
                     }
+                    let list_title = format!(" Users ({}) ", filtered_users.len());
                     let list = RatatuiList::new(items)
-                        .block(Block::default().borders(Borders::ALL).title(" Users "))
+                        .block(Block::default().borders(Borders::ALL).title(list_title))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
-                    f.render_stateful_widget(list, chunks[1], &mut users_state);
+                    f.render_stateful_widget(list, assignee_chunks[1], &mut users_state);
                 }
                 NewTaskStep::Confirm => {
                     let f_name = selected_folder.as_ref().map(|f| f.name.as_str()).unwrap_or("");
@@ -215,16 +331,19 @@ async fn run_new_task_loop<A: ClickUpApi>(
                          Ready to create? [Press Enter to Confirm / 'n' edit name / 'd' edit description / 'a' edit assignee]",
                         f_name, l_name, s_name, name, description, a_name
                     );
-                    let p = Paragraph::new(summary_text).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Confirmation "),
-                    );
+                    let p = Paragraph::new(summary_text)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Confirmation "),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
                 }
                 NewTaskStep::Creating => {
                     let p = Paragraph::new("Contacting ClickUp API... Please wait.")
-                        .block(Block::default().borders(Borders::ALL).title(" Creating "));
+                        .block(Block::default().borders(Borders::ALL).title(" Creating "))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
                 }
                 NewTaskStep::Done => {
@@ -232,11 +351,13 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 Create another task in SAME list? [y]\n\
                                 Restart from Folder selection? [s]\n\
                                 Exit workflow? [n / Enter / Esc / q]";
-                    let p = Paragraph::new(text).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Complete "),
-                    );
+                    let p = Paragraph::new(text)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Complete "),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
                 }
             }
@@ -245,9 +366,11 @@ async fn run_new_task_loop<A: ClickUpApi>(
             let help_text = match step {
                 NewTaskStep::FolderSelect
                 | NewTaskStep::ListSelect
-                | NewTaskStep::StatusSelect
-                | NewTaskStep::AssigneeSelect => {
+                | NewTaskStep::StatusSelect => {
                     "Arrow Up/Down or j/k: navigate | Enter: confirm selection | Esc: cancel"
+                }
+                NewTaskStep::AssigneeSelect => {
+                    "Arrow Up/Down: navigate | Type to filter | Enter: confirm selection | Esc: cancel"
                 }
                 NewTaskStep::NameInput | NewTaskStep::DescriptionInput => {
                     "Type normally | Enter: submit value | Esc: cancel"
@@ -260,7 +383,7 @@ async fn run_new_task_loop<A: ClickUpApi>(
             f.render_widget(
                 Paragraph::new(help_text)
                     .block(Block::default().borders(Borders::TOP))
-                    .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                    .style(Style::default().fg(crate::ui::styles::COLOR_MUTED).bg(crate::ui::styles::COLOR_BG)),
                 chunks[2],
             );
         })?;
@@ -412,30 +535,37 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                         }
                                     }
                                 }
+                                assignee_filter.clear();
                                 users_state.select(Some(0));
                                 step = NewTaskStep::AssigneeSelect;
                             }
                             _ => {}
                         },
                         NewTaskStep::AssigneeSelect => match key.code {
-                            KeyCode::Up | KeyCode::Char('k') => {
+                            KeyCode::Up => {
                                 let i = users_state.selected().unwrap_or(0);
                                 if i > 0 {
                                     users_state.select(Some(i - 1));
                                 }
                             }
-                            KeyCode::Down | KeyCode::Char('j') => {
+                            KeyCode::Down => {
                                 let i = users_state.selected().unwrap_or(0);
-                                if i + 1 <= workspace_users.len() {
+                                if i < filtered_users.len() {
                                     users_state.select(Some(i + 1));
                                 }
+                            }
+                            KeyCode::Backspace => {
+                                assignee_filter.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                assignee_filter.push(c);
                             }
                             KeyCode::Enter => {
                                 let idx = users_state.selected().unwrap_or(0);
                                 if idx == 0 {
                                     assignee_choice = None;
-                                } else {
-                                    assignee_choice = Some(workspace_users[idx - 1].clone());
+                                } else if idx <= filtered_users.len() {
+                                    assignee_choice = Some((*filtered_users[idx - 1]).clone());
                                 }
                                 step = NewTaskStep::Confirm;
                             }
@@ -446,12 +576,15 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 step = NewTaskStep::Creating;
                                 // Perform creation
                                 terminal.draw(|f| {
-                                    f.render_widget(
-                                        Paragraph::new("Creating task...").block(
+                                    crate::ui::styles::render_background(f);
+                                f.render_widget(
+                                    Paragraph::new("Creating task...")
+                                        .block(
                                             Block::default().borders(Borders::ALL).title(" Please Wait "),
-                                        ),
-                                        f.area(),
-                                    );
+                                        )
+                                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
+                                    f.area(),
+                                );
                                 })?;
 
                                 let list_id = &selected_list.as_ref().unwrap().id;

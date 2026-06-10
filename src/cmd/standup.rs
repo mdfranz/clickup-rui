@@ -6,7 +6,8 @@ use crate::util::filter::should_include_task;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Paragraph};
+use ratatui::style::Style;
+use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
 use ratatui::Terminal;
 use std::collections::HashSet;
 use std::io;
@@ -101,6 +102,7 @@ async fn run_standup_loop<A: ClickUpApi>(
     loop {
         terminal.draw(|f| {
             let size = f.area();
+            crate::ui::styles::render_background(f);
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -138,10 +140,12 @@ async fn run_standup_loop<A: ClickUpApi>(
                                 "[ ]"
                             };
                             ListItem::new(format!("  {} [{}] {}", checked, t.status.status, t.name))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         })
                         .collect();
                     let list = RatatuiList::new(items)
                         .block(Block::default().borders(Borders::ALL).title(" Your Active Tasks "))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut select_state);
                 }
@@ -167,23 +171,51 @@ async fn run_standup_loop<A: ClickUpApi>(
                         .constraints([Constraint::Length(6), Constraint::Min(3)].as_ref())
                         .split(chunks[1]);
 
-                    f.render_widget(Paragraph::new(info_text), main_layout[0]);
-
-                    let p_comment = Paragraph::new(rep.comment.as_str()).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .border_style(crate::ui::styles::style_border_active())
-                            .title(" Comment Textarea "),
+                    f.render_widget(
+                        Paragraph::new(info_text)
+                            .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
+                        main_layout[0],
                     );
+
+                    let p_comment = Paragraph::new(rep.comment.as_str())
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .border_style(crate::ui::styles::style_border_active())
+                                .title(" Comment Textarea ")
+                                .padding(Padding::new(2, 2, 1, 1)),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p_comment, main_layout[1]);
+
+                    // Dynamic cursor placement tracking current length and wrapped lines
+                    let lines: Vec<&str> = rep.comment.split('\n').collect();
+                    let last_line = lines.last().copied().unwrap_or("");
+                    let last_line_len = last_line.chars().count();
+
+                    let inner_width = (main_layout[1].width as usize).saturating_sub(6);
+                    let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
+                    let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
+
+                    let cursor_y = main_layout[1].y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
+                    let cursor_x = main_layout[1].x + 3 + extra_x as u16;
+
+                    let safe_cursor_x = cursor_x.min(main_layout[1].x + main_layout[1].width.saturating_sub(2));
+                    let safe_cursor_y = cursor_y.min(main_layout[1].y + main_layout[1].height.saturating_sub(2));
+
+                    f.set_cursor_position(ratatui::layout::Position::new(safe_cursor_x, safe_cursor_y));
                 }
                 StandupStep::StatusPicker => {
                     let items: Vec<ListItem> = list_statuses
                         .iter()
-                        .map(|s| ListItem::new(format!("  {}", s.status)))
+                        .map(|s| {
+                            ListItem::new(format!("  {}", s.status))
+                                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        })
                         .collect();
                     let list = RatatuiList::new(items)
                         .block(Block::default().borders(Borders::ALL).title(" Choose Status "))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut status_state);
                 }
@@ -206,11 +238,13 @@ async fn run_standup_loop<A: ClickUpApi>(
                             }
                         }
                     }
-                    let p = Paragraph::new(summary).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Summary Results "),
-                    );
+                    let p = Paragraph::new(summary)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Summary Results "),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p, chunks[1]);
                 }
             }
@@ -231,7 +265,7 @@ async fn run_standup_loop<A: ClickUpApi>(
             f.render_widget(
                 Paragraph::new(help_text)
                     .block(Block::default().borders(Borders::TOP))
-                    .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                    .style(Style::default().fg(crate::ui::styles::COLOR_MUTED).bg(crate::ui::styles::COLOR_BG)),
                 chunks[2],
             );
         })?;
@@ -311,6 +345,7 @@ async fn run_standup_loop<A: ClickUpApi>(
 
                                 if !rep.comment.trim().is_empty() || status_changed {
                                     terminal.draw(|f| {
+                                        crate::ui::styles::render_background(f);
                                         f.render_widget(
                                             Paragraph::new("Submitting updates to ClickUp...").block(
                                                 Block::default().borders(Borders::ALL).title(" Posting "),
@@ -350,6 +385,7 @@ async fn run_standup_loop<A: ClickUpApi>(
                                 // Fetch statuses for picker
                                 let rep = &reports[current_report_idx];
                                 terminal.draw(|f| {
+                                    crate::ui::styles::render_background(f);
                                     f.render_widget(
                                         Paragraph::new("Loading status list...").block(
                                             Block::default().borders(Borders::ALL).title(" Please Wait "),

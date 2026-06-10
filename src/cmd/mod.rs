@@ -1,6 +1,7 @@
 pub mod browse;
 pub mod cache_cmd;
 pub mod clean;
+pub mod config_cmd;
 pub mod menu;
 pub mod new_task;
 pub mod setup;
@@ -59,13 +60,22 @@ pub async fn route_command<A: ClickUpApi>(api: &A, cmd: Commands) -> Result<()> 
             user_id,
             summarize,
             raw,
+            csv,
+            json,
         } => {
-            track::run_track(api, user_id, summarize, raw).await?;
+            track::run_track(api, user_id, summarize, raw, csv, json).await?;
         }
         Commands::Cache { cmd } => match cmd {
             crate::app::CacheSubcommands::Clear => cache_cmd::run_cache_clear().await?,
             crate::app::CacheSubcommands::Info => cache_cmd::run_cache_info().await?,
         },
+        Commands::Config {
+            provider,
+            model,
+            ollama_url,
+        } => {
+            config_cmd::run_config(provider, model, ollama_url).await?;
+        }
         Commands::Clean => {
             clean::run_clean().await?;
         }

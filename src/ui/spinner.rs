@@ -39,6 +39,9 @@ impl Spinner {
             if let Some(handle) = self.handle.take() {
                 handle.abort();
             }
+            // Clear the line when done
+            print!("\r\x1B[K");
+            let _ = std::io::stdout().flush();
         }
     }
 }
