@@ -11,34 +11,49 @@ use std::io;
 
 pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
     let menu_options = vec![
-        ("Tasks List View", Commands::Tasks {
-            all: false,
-            detailed: false,
-            summarize: false,
-            team: false,
-            mine: true,
-            id: false,
-        }),
-        ("Browse Interactive View", Commands::Browse {
-            all: false,
-            team: false,
-            mine: true,
-        }),
+        (
+            "Tasks List View",
+            Commands::Tasks {
+                all: false,
+                detailed: false,
+                summarize: false,
+                team: false,
+                mine: true,
+                id: false,
+            },
+        ),
+        (
+            "Browse Interactive View",
+            Commands::Browse {
+                all: false,
+                team: false,
+                mine: true,
+            },
+        ),
         ("Create New Task", Commands::New),
-        ("Log Daily Standup Updates", Commands::Standup {
-            all: false,
-            mine: true,
-        }),
-        ("Track User Activity Logs", Commands::Track {
-            user_id: None,
-            summarize: false,
-            raw: false,
-        }),
-        ("View Team Status Summary", Commands::TeamStatus {
-            days: 7,
-            summarize: true,
-            raw: false,
-        }),
+        (
+            "Log Daily Standup Updates",
+            Commands::Standup {
+                all: false,
+                mine: true,
+            },
+        ),
+        (
+            "Track User Activity Logs",
+            Commands::Track {
+                user_id: None,
+                summarize: false,
+                raw: false,
+            },
+        ),
+        (
+            "View Team Status Summary",
+            Commands::TeamStatus {
+                days: 7,
+                summarize: true,
+                raw: false,
+            },
+        ),
         ("Interactive setup", Commands::Setup),
         ("Show active config", Commands::Show),
     ];
@@ -71,20 +86,20 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
                     .as_ref(),
                 )
                 .split(size);
-j
-            let banner = "   __   __   _              _   _      _____ _   _ _____
-  / _| / /  (_) ___ _ __   | | | |    |_   _| | | |_   _|
- | |  / /   | |/ __| '_ \\  | | | |______|_| | | | | |_| |
- | |_/ /____| | (__| |_) | | |_| |______| | | |_| |  | |
-  \\__\\_____/|_|\\___| .__/   \\___/       |_|  \\___/   |_|
-                   |_|                                    ";
+            /*
+                        let banner = "   __   __   _              _   _      _____ _   _ _____
+              / _| / /  (_) ___ _ __   | | | |    |_   _| | | |_   _|
+             | |  / /   | |/ __| '_ \\  | | | |______|_| | | | | |_| |
+             | |_/ /____| | (__| |_) | | |_| |______| | | |_| |  | |
+              \\__\\_____/|_|\\___| .__/   \\___/       |_|  \\___/   |_|
+                               |_|                                    ";
 
-            f.render_widget(
-                Paragraph::new(banner)
-                    .style(crate::ui::styles::style_title()),
-                chunks[0],
-            );
-
+                        f.render_widget(
+                            Paragraph::new(banner)
+                                .style(crate::ui::styles::style_title()),
+                            chunks[0],
+                        );
+            */
             let items: Vec<ListItem> = menu_options
                 .iter()
                 .map(|(label, _)| ListItem::new(format!("  •  {}", label)))
@@ -101,9 +116,11 @@ j
 
             f.render_stateful_widget(menu_list, chunks[1], &mut list_state);
 
-            let help = Paragraph::new("Arrow Up/Down or j/k: navigate | Enter: execute subcommand | q: quit")
-                .block(Block::default().borders(Borders::TOP))
-                .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_MUTED));
+            let help = Paragraph::new(
+                "Arrow Up/Down or j/k: navigate | Enter: execute subcommand | q: quit",
+            )
+            .block(Block::default().borders(Borders::TOP))
+            .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_MUTED));
             f.render_widget(help, chunks[2]);
         })?;
 
@@ -140,7 +157,8 @@ j
                             set_menu_mode(true);
 
                             // 3. Execute command through router
-                            let route_res = Box::pin(crate::cmd::route_command(api, command_to_run)).await;
+                            let route_res =
+                                Box::pin(crate::cmd::route_command(api, command_to_run)).await;
                             if let Err(e) = route_res {
                                 println!("\nError executing command: {}\n", e);
                             }
@@ -149,14 +167,20 @@ j
                             set_menu_mode(false);
 
                             // 5. Pause screen
-                            println!("\n[Press any key to return to menu, or 'q' / Ctrl+C to exit...]");
+                            println!(
+                                "\n[Press any key to return to menu, or 'q' / Ctrl+C to exit...]"
+                            );
                             crossterm::terminal::enable_raw_mode()?;
                             let mut quit = false;
                             loop {
                                 if event::poll(std::time::Duration::from_millis(100))? {
                                     if let Event::Key(k) = event::read()? {
                                         if k.kind == KeyEventKind::Press {
-                                            if k.code == KeyCode::Char('q') || (k.code == KeyCode::Char('c') && k.modifiers.contains(event::KeyModifiers::CONTROL)) {
+                                            if k.code == KeyCode::Char('q')
+                                                || (k.code == KeyCode::Char('c')
+                                                    && k.modifiers
+                                                        .contains(event::KeyModifiers::CONTROL))
+                                            {
                                                 quit = true;
                                             }
                                             break;

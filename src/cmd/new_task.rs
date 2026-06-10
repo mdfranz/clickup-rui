@@ -47,6 +47,7 @@ pub async fn run_new_task<A: ClickUpApi>(api: &A) -> Result<()> {
     res
 }
 
+#[allow(unused_assignments)]
 async fn run_new_task_loop<A: ClickUpApi>(
     api: &A,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -54,7 +55,7 @@ async fn run_new_task_loop<A: ClickUpApi>(
     let cfg = Config::load()?;
     let current_user = api.get_current_user().await?;
 
-    let mut folders: Vec<Folder> = cfg
+    let folders: Vec<Folder> = cfg
         .folders
         .iter()
         .map(|fc| Folder {

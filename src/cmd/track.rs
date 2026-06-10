@@ -7,7 +7,7 @@ use crate::ui::spinner::Spinner;
 use crate::util::env::is_menu_mode;
 use crate::util::errors::Result;
 use crate::util::format::format_comment_date;
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, Local};
 use std::collections::{HashMap, HashSet};
 
 pub async fn run_track<A: ClickUpApi>(

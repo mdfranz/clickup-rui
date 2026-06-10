@@ -1,13 +1,13 @@
 use crate::ai::summarizer::GeminiSummarizer;
 use crate::clickup::api::ClickUpApi;
-use crate::clickup::models::{Comment, Task};
+use crate::clickup::models::Task;
 use crate::config::Config;
 use crate::ui::spinner::Spinner;
 use crate::util::errors::Result;
 use crate::util::filter::should_include_task;
 use crate::util::format::{format_comment_date, format_task_date};
 use crate::util::sort::{sort_comments_by_date_desc, sort_tasks_by_updated_desc};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub async fn run_tasks<A: ClickUpApi>(
     api: &A,

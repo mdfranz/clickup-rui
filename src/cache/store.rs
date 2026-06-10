@@ -5,7 +5,6 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CacheEntry<T> {

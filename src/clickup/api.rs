@@ -1,6 +1,7 @@
 use crate::clickup::models::*;
 use crate::util::errors::Result;
 
+#[allow(async_fn_in_trait)]
 pub trait ClickUpApi: Send + Sync {
     async fn get_teams(&self) -> Result<Vec<Team>>;
     async fn get_current_user(&self) -> Result<User>;

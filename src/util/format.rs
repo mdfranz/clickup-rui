@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local};
 
 pub fn format_task_date(ms_str: &Option<String>) -> String {
     let ms = match ms_str {

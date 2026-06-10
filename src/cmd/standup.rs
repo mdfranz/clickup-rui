@@ -365,7 +365,7 @@ async fn run_standup_loop<A: ClickUpApi>(
                                 // Actually, in models we didn't specify `list` field on Task. But wait, `statuses` from `GetList(list_id)` can be fetched or we can use status picker with default statuses: "Open", "To Do", "In Progress", "In Review", "Completed", "Closed".
                                 // Let's try to parse list ID from task ID or standard ClickUp lists, but wait, since CachedClient caches list details, let's use list detail from the cached folders! Let's search configured folders for the list that contains this task:
                                 let mut found_statuses = Vec::new();
-                                if let Ok(l_detail) = api.get_task_detail(&rep.task.id).await {
+                                if api.get_task_detail(&rep.task.id).await.is_ok() {
                                     // task detail might have statuses! Or let's assume we can fetch list detailed.
                                     // Wait, let's check if we can list statuses. Let's search configured folders:
                                     'outer: for folder in &cfg.folders {
