@@ -251,8 +251,7 @@ async fn run_scrollable_tui(
 
             let p = Paragraph::new(content.as_str())
                 .block(block)
-                .scroll((scroll, 0))
-                .style(ratatui::style::Style::default().fg(crate::ui::styles::COLOR_FG));
+                .scroll((scroll, 0));
             f.render_widget(p, size);
         })?;
 
