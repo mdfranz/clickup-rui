@@ -112,6 +112,7 @@ cargo run --release -- setup
 * **Comment Editor**: Press `c` to open overlay -> Type -> `Ctrl+s` to save / `Esc` to cancel
 * **Status Picker**: Press `s` to open status menu -> Arrow keys -> `Enter` to set / `Esc` to cancel
 * **New Task Wizard**: Press `n` to launch
+* **Task Reload**: Press `r` to refresh details and comments for the current task
 * **Exit**: `Esc` or `q`
 
 ### Stateful Picker (Assignee Selection)
