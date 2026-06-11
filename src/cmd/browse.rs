@@ -27,46 +27,49 @@ enum ActivePane {
     Right,
 }
 
-pub async fn run_browse<A: ClickUpApi>(api: &A, all_flag: bool, mine_only: bool) -> Result<()> {
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let res = run_browse_loop(api, &mut terminal, all_flag, mine_only).await;
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    res
+pub async fn run_browse<A: ClickUpApi + Clone + 'static>(api: &A, all_flag: bool, mine_only: bool) -> Result<()> {
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    run_browse_loop(api, guard.inner(), all_flag, mine_only).await
 }
 
-async fn run_browse_loop<A: ClickUpApi>(
+
+async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
     api: &A,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     all_flag: bool,
     mine_only: bool,
 ) -> Result<()> {
+    'reload: loop {
     let cfg = Config::load()?;
+
+    draw_loader(terminal, "Connecting to ClickUp", "Fetching current user profile...")?;
     let user = api.get_current_user().await?;
 
     // Load active tasks across folders
     let mut tasks = Vec::new();
     let mut task_list_map = std::collections::HashMap::new(); // task_id -> list_id
 
-    for folder in &cfg.folders {
+    let total_folders = cfg.folders.len();
+    for (f_idx, folder) in cfg.folders.iter().enumerate() {
+        draw_loader(
+            terminal,
+            &format!("Fetching lists (Folder {}/{})", f_idx + 1, total_folders),
+            &format!("Folder: {}", folder.name),
+        )?;
         if let Ok(lists) = api.get_lists(&folder.id).await {
-            for list in lists {
+            let total_lists = lists.len();
+            for (l_idx, list) in lists.iter().enumerate() {
+                draw_loader(
+                    terminal,
+                    &format!(
+                        "Fetching tasks (Folder {}/{}, List {}/{})",
+                        f_idx + 1,
+                        total_folders,
+                        l_idx + 1,
+                        total_lists
+                    ),
+                    &format!("List: {}", list.name),
+                )?;
                 if let Ok(t_list) = api.get_tasks(&list.id, all_flag).await {
                     for task in t_list {
                         if should_include_task(&task, user.id, all_flag, mine_only) {
@@ -121,10 +124,13 @@ async fn run_browse_loop<A: ClickUpApi>(
     let mut active_pane = ActivePane::Left;
     let mut right_scroll: u16 = 0;
 
-    let mut cached_comments: std::collections::HashMap<String, Vec<Comment>> =
-        std::collections::HashMap::new();
-    let mut cached_task_details: std::collections::HashMap<String, Task> =
-        std::collections::HashMap::new();
+    let cached_comments = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::HashMap::<String, Vec<Comment>>::new(),
+    ));
+    let cached_task_details = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::HashMap::<String, Task>::new(),
+    ));
+    let mut loading_tasks = std::collections::HashSet::<String>::new();
 
     let mut comment_buffer = String::new();
 
@@ -135,79 +141,158 @@ async fn run_browse_loop<A: ClickUpApi>(
         let current_task_idx = list_state.selected().unwrap_or(0);
         let current_task = tasks[current_task_idx].clone();
 
-        let needs_detail = !cached_task_details.contains_key(&current_task.id);
-        let needs_comments = !cached_comments.contains_key(&current_task.id);
+        // Check if background fetch is needed
+        let (has_detail, has_comments) = {
+            let details = cached_task_details.lock().unwrap();
+            let comments = cached_comments.lock().unwrap();
+            (details.contains_key(&current_task.id), comments.contains_key(&current_task.id))
+        };
 
-        if needs_detail || needs_comments {
-            terminal.draw(|f| {
-                let size = f.area();
-                crate::ui::styles::render_background(f);
-                let main_layout = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Min(3), Constraint::Length(2)].as_ref())
-                    .split(size);
+        if (!has_detail || !has_comments) && !loading_tasks.contains(&current_task.id) {
+            loading_tasks.insert(current_task.id.clone());
 
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                    .split(main_layout[0]);
+            let api_clone = api.clone();
+            let details_clone = cached_task_details.clone();
+            let comments_clone = cached_comments.clone();
+            let task_id = current_task.id.clone();
+            let task_fallback = current_task.clone();
 
-                let left_border_style = if active_pane == ActivePane::Left {
-                    crate::ui::styles::style_border_active()
-                } else {
-                    crate::ui::styles::style_border_inactive()
+            tokio::spawn(async move {
+                // Fetch details
+                let detailed = match api_clone.get_task_detail(&task_id).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::error!("Failed to fetch task details for {}: {:?}", task_id, e);
+                        task_fallback
+                    }
                 };
+                details_clone.lock().unwrap().insert(task_id.clone(), detailed);
 
-                let right_border_style = if active_pane == ActivePane::Right {
-                    crate::ui::styles::style_border_active()
-                } else {
-                    crate::ui::styles::style_border_inactive()
+                // Fetch comments
+                let comments = match api_clone.get_task_comments(&task_id).await {
+                    Ok(mut c) => {
+                        sort_comments_by_date_desc(&mut c);
+                        c
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to fetch task comments for {}: {:?}", task_id, e);
+                        Vec::new()
+                    }
                 };
+                comments_clone.lock().unwrap().insert(task_id, comments);
+            });
+        }
 
-                // Left Pane: Tasks List (with the newly selected highlight)
-                let items: Vec<ListItem> = tasks
+        // Get detailed task and comments if they are cached
+        let detailed_task = cached_task_details.lock().unwrap().get(&current_task.id).cloned();
+        let comments = cached_comments.lock().unwrap().get(&current_task.id).cloned();
+
+        let mut detail_lines = Vec::new();
+        let max_right_scroll;
+        let right_title: String;
+
+        let right_border_style = if active_pane == ActivePane::Right {
+            crate::ui::styles::style_border_active()
+        } else {
+            crate::ui::styles::style_border_inactive()
+        };
+
+        let right_pane_widget = match (&detailed_task, &comments) {
+            (Some(detailed_task), Some(comments)) => {
+                let assignees = detailed_task
+                    .assignees
                     .iter()
-                    .map(|t| {
-                        let status_color = crate::ui::styles::get_status_color(&t.status.status);
-                        let date_str = format_task_date(&t.date_updated);
-                        let date_display = if date_str.is_empty() {
-                            "        ".to_string()
-                        } else {
-                            format!("[{}] ", date_str)
-                        };
-                        let date_span = Span::styled(
-                            date_display,
-                            Style::default().fg(crate::ui::styles::COLOR_MUTED)
-                        );
-                        let status_upper = t.status.status.to_uppercase();
-                        let status_span = Span::styled(
-                            format!("[{:<11}]", status_upper),
-                            Style::default().fg(status_color).add_modifier(Modifier::BOLD)
-                        );
-                        let name_span = Span::styled(
-                            format!(" {}", t.name),
-                            Style::default().fg(crate::ui::styles::COLOR_FG)
-                        );
+                    .map(|u| u.username.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-                        ListItem::new(vec![
-                            Line::from(vec![date_span, status_span, name_span]),
-                            Line::from(""),
-                        ])
-                    })
-                    .collect();
+                let desc_text = detailed_task.text_content.as_deref().unwrap_or("No description");
 
-                let left_list = RatatuiList::new(items)
+                let status_color = crate::ui::styles::get_status_color(&detailed_task.status.status);
+                detail_lines.push(Line::from(vec![
+                    Span::styled("Status:    ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                    Span::styled(detailed_task.status.status.to_uppercase(), Style::default().add_modifier(Modifier::BOLD).fg(status_color)),
+                ]));
+
+                detail_lines.push(Line::from(vec![
+                    Span::styled("Assignees: ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                    Span::styled(assignees, Style::default().fg(crate::ui::styles::COLOR_FG)),
+                ]));
+
+                detail_lines.push(Line::from(vec![
+                    Span::styled("Creator:   ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                    Span::styled(&detailed_task.creator.username, Style::default().fg(crate::ui::styles::COLOR_FG)),
+                ]));
+
+                detail_lines.push(Line::from(""));
+
+                detail_lines.push(Line::from(vec![
+                    Span::styled("Description", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                ]));
+                detail_lines.push(Line::from(vec![
+                    Span::styled("───────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                ]));
+
+                for line in desc_text.lines() {
+                    detail_lines.push(Line::from(vec![
+                        Span::styled(line, Style::default().fg(crate::ui::styles::COLOR_FG)),
+                    ]));
+                }
+
+                detail_lines.push(Line::from(""));
+
+                detail_lines.push(Line::from(vec![
+                    Span::styled("Comments", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                ]));
+                detail_lines.push(Line::from(vec![
+                    Span::styled("────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                ]));
+
+                if comments.is_empty() {
+                    detail_lines.push(Line::from(vec![
+                        Span::styled("No comments.", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                    ]));
+                } else {
+                    for c in comments {
+                        let dt = format_comment_date(&c.date);
+                        detail_lines.push(Line::from(vec![
+                            Span::styled(format!("{} ", c.user.username), Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_FG)),
+                            Span::styled(format!("({})", dt), Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                        ]));
+                        for line in c.comment_text.lines() {
+                            detail_lines.push(Line::from(vec![
+                                Span::styled(format!("  {}", line), Style::default().fg(crate::ui::styles::COLOR_FG)),
+                            ]));
+                        }
+                        detail_lines.push(Line::from(""));
+                    }
+                }
+
+                // Calculate maximum vertical scroll
+                let total_detail_lines = detail_lines.len();
+                let size = terminal.size()?;
+                let main_layout_height = size.height.saturating_sub(2);
+                let right_pane_height = main_layout_height.saturating_sub(2) as usize;
+                max_right_scroll = total_detail_lines.saturating_sub(right_pane_height) as u16;
+
+                right_title = if active_pane == ActivePane::Right {
+                    format!(" Task: {} (Focused) ", detailed_task.name)
+                } else {
+                    format!(" Task: {} ", detailed_task.name)
+                };
+
+                Paragraph::new(detail_lines)
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
-                            .title(" Tasks List ")
-                            .border_style(left_border_style),
+                            .title(right_title)
+                            .border_style(right_border_style),
                     )
-                    .highlight_style(crate::ui::styles::style_selected());
-
-                f.render_stateful_widget(left_list, chunks[0], &mut list_state);
-
-                // Right Pane: Loading Details & Comments
+                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    .wrap(Wrap { trim: true })
+                    .scroll((right_scroll, 0))
+            }
+            _ => {
                 let loading_lines = vec![
                     Line::from(""),
                     Line::from(vec![
@@ -223,7 +308,8 @@ async fn run_browse_loop<A: ClickUpApi>(
                         Span::styled("   Please wait...", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                     ]),
                 ];
-                let right_pane = Paragraph::new(loading_lines)
+                max_right_scroll = 0;
+                Paragraph::new(loading_lines)
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
@@ -231,141 +317,11 @@ async fn run_browse_loop<A: ClickUpApi>(
                             .border_style(right_border_style),
                     )
                     .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
-                    .wrap(Wrap { trim: true });
-
-                f.render_widget(right_pane, chunks[1]);
-
-                // Help Bar
-                let help_line = Line::from(vec![
-                    Span::styled(" Tab", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" Switch Pane |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(" c", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" Add Comment |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(" s", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" Change Status |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(" n", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" New Task |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(" r", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" Reload |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(" ↑/↓ (j/k)", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" Scroll Focused Pane |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(" q", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                    Span::styled(" Quit", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                ]);
-
-                let help_bar = Paragraph::new(help_line).block(
-                    Block::default()
-                        .borders(Borders::TOP)
-                        .border_style(Style::default().fg(crate::ui::styles::COLOR_MUTED))
-                );
-                f.render_widget(help_bar, main_layout[1]);
-            })?;
-        }
-
-        // Ensure current task detail and comments are loaded
-        if !cached_task_details.contains_key(&current_task.id) {
-            if let Ok(detailed) = api.get_task_detail(&current_task.id).await {
-                cached_task_details.insert(current_task.id.clone(), detailed);
-            } else {
-                cached_task_details.insert(current_task.id.clone(), current_task.clone());
+                    .wrap(Wrap { trim: true })
             }
-        }
+        };
 
-        if !cached_comments.contains_key(&current_task.id) {
-            if let Ok(mut comments) = api.get_task_comments(&current_task.id).await {
-                sort_comments_by_date_desc(&mut comments);
-                cached_comments.insert(current_task.id.clone(), comments);
-            } else {
-                cached_comments.insert(current_task.id.clone(), Vec::new());
-            }
-        }
-
-        let detailed_task = cached_task_details.get(&current_task.id).unwrap();
-        let comments = cached_comments.get(&current_task.id).unwrap();
-
-        // Build Right Pane details vector of Line
-        let assignees = detailed_task
-            .assignees
-            .iter()
-            .map(|u| u.username.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let desc_text = detailed_task.text_content.as_deref().unwrap_or("No description");
-
-        let mut detail_lines = Vec::new();
-
-        // Metadata Fields
-        let status_color = crate::ui::styles::get_status_color(&detailed_task.status.status);
-        detail_lines.push(Line::from(vec![
-            Span::styled("Status:    ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
-            Span::styled(detailed_task.status.status.to_uppercase(), Style::default().add_modifier(Modifier::BOLD).fg(status_color)),
-        ]));
-
-        detail_lines.push(Line::from(vec![
-            Span::styled("Assignees: ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
-            Span::styled(assignees.clone(), Style::default().fg(crate::ui::styles::COLOR_FG)),
-        ]));
-
-        detail_lines.push(Line::from(vec![
-            Span::styled("Creator:   ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
-            Span::styled(&detailed_task.creator.username, Style::default().fg(crate::ui::styles::COLOR_FG)),
-        ]));
-
-        detail_lines.push(Line::from(""));
-
-        // Description Section
-        detail_lines.push(Line::from(vec![
-            Span::styled("Description", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-        ]));
-        detail_lines.push(Line::from(vec![
-            Span::styled("───────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
-        ]));
-
-        for line in desc_text.lines() {
-            detail_lines.push(Line::from(vec![
-                Span::styled(line, Style::default().fg(crate::ui::styles::COLOR_FG)),
-            ]));
-        }
-
-        detail_lines.push(Line::from(""));
-
-        // Comments Section
-        detail_lines.push(Line::from(vec![
-            Span::styled("Comments", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-        ]));
-        detail_lines.push(Line::from(vec![
-            Span::styled("────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
-        ]));
-
-        if comments.is_empty() {
-            detail_lines.push(Line::from(vec![
-                Span::styled("No comments.", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
-            ]));
-        } else {
-            for c in comments {
-                let dt = format_comment_date(&c.date);
-                detail_lines.push(Line::from(vec![
-                    Span::styled(format!("{} ", c.user.username), Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_FG)),
-                    Span::styled(format!("({})", dt), Style::default().fg(crate::ui::styles::COLOR_MUTED)),
-                ]));
-                for line in c.comment_text.lines() {
-                    detail_lines.push(Line::from(vec![
-                        Span::styled(format!("  {}", line), Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    ]));
-                }
-                detail_lines.push(Line::from(""));
-            }
-        }
-
-        let total_detail_lines = detail_lines.len();
-
-        // Calculate maximum vertical scroll based on current terminal height
-        let size = terminal.size()?;
-        let main_layout_height = size.height.saturating_sub(2); // subtracting help bar height
-        let right_pane_height = main_layout_height.saturating_sub(2) as usize; // subtracting borders
-        let max_right_scroll = total_detail_lines.saturating_sub(right_pane_height) as u16;
-
+        // Render Frame
         terminal.draw(|f| {
             let size = f.area();
             crate::ui::styles::render_background(f);
@@ -380,12 +336,6 @@ async fn run_browse_loop<A: ClickUpApi>(
                 .split(main_layout[0]);
 
             let left_border_style = if active_pane == ActivePane::Left {
-                crate::ui::styles::style_border_active()
-            } else {
-                crate::ui::styles::style_border_inactive()
-            };
-
-            let right_border_style = if active_pane == ActivePane::Right {
                 crate::ui::styles::style_border_active()
             } else {
                 crate::ui::styles::style_border_inactive()
@@ -434,25 +384,8 @@ async fn run_browse_loop<A: ClickUpApi>(
 
             f.render_stateful_widget(left_list, chunks[0], &mut list_state);
 
-            // Right Pane: Task Details & Comments
-            let right_title = if active_pane == ActivePane::Right {
-                format!(" Task: {} (Focused) ", detailed_task.name)
-            } else {
-                format!(" Task: {} ", detailed_task.name)
-            };
-
-            let right_pane = Paragraph::new(detail_lines.clone())
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(right_title)
-                        .border_style(right_border_style),
-                )
-                .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
-                .wrap(Wrap { trim: true })
-                .scroll((right_scroll, 0));
-
-            f.render_widget(right_pane, chunks[1]);
+            // Right Pane
+            f.render_widget(right_pane_widget, chunks[1]);
 
             // Help Bar
             let help_line = Line::from(vec![
@@ -484,7 +417,15 @@ async fn run_browse_loop<A: ClickUpApi>(
                 let popup_layout = get_popup_layout(size, 50, 30);
                 f.render_widget(Clear, popup_layout);
 
-                let editor_p = Paragraph::new(comment_buffer.as_str())
+                let inner_width = (popup_layout.width as usize).saturating_sub(6);
+                let wrapped_lines = wrap_text_by_chars(comment_buffer.as_str(), inner_width);
+
+                let paragraph_lines: Vec<Line> = wrapped_lines
+                    .iter()
+                    .map(|l| Line::from(l.as_str()))
+                    .collect();
+
+                let editor_p = Paragraph::new(paragraph_lines)
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
@@ -495,20 +436,13 @@ async fn run_browse_loop<A: ClickUpApi>(
                     .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                 f.render_widget(editor_p, popup_layout);
 
-                // Place cursor at the end of the input text
-                let lines: Vec<&str> = comment_buffer.split('\n').collect();
-                let last_line = lines.last().copied().unwrap_or("");
-                let last_line_len = last_line.chars().count();
+                // Place cursor at the end of the text
+                let cursor_row = wrapped_lines.len().saturating_sub(1) as u16;
+                let cursor_col = wrapped_lines.last().map(|l| l.chars().count()).unwrap_or(0) as u16;
 
-                // Border takes 1, Padding::new(2, 2, 1, 1) takes 2 left/right and 1 top/bottom
-                let inner_width = (popup_layout.width as usize).saturating_sub(6);
-                let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
-                let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
+                let cursor_y = popup_layout.y + 2 + cursor_row;
+                let cursor_x = popup_layout.x + 3 + cursor_col;
 
-                let cursor_y = popup_layout.y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
-                let cursor_x = popup_layout.x + 3 + extra_x as u16;
-
-                // Keep cursor within bounds of the popup
                 let safe_cursor_x = cursor_x.min(popup_layout.x + popup_layout.width.saturating_sub(2));
                 let safe_cursor_y = cursor_y.min(popup_layout.y + popup_layout.height.saturating_sub(2));
 
@@ -545,9 +479,9 @@ async fn run_browse_loop<A: ClickUpApi>(
                 if key.kind == KeyEventKind::Press {
                     match state {
                         BrowseState::List => match key.code {
-                            KeyCode::Char('q') => break,
+                            KeyCode::Char('q') => break 'reload,
                             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                break;
+                                break 'reload;
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 match active_pane {
@@ -596,7 +530,6 @@ async fn run_browse_loop<A: ClickUpApi>(
                                 state = BrowseState::CommentEditor;
                             }
                             KeyCode::Char('s') => {
-                                // Load list statuses for picker
                                 terminal.draw(|f| {
                                     crate::ui::styles::render_background(f);
                                     f.render_widget(
@@ -629,8 +562,9 @@ async fn run_browse_loop<A: ClickUpApi>(
                                 state = BrowseState::StatusPicker;
                             }
                             KeyCode::Char('r') => {
-                                cached_task_details.remove(&current_task.id);
-                                cached_comments.remove(&current_task.id);
+                                cached_task_details.lock().unwrap().remove(&current_task.id);
+                                cached_comments.lock().unwrap().remove(&current_task.id);
+                                loading_tasks.remove(&current_task.id);
                             }
                             KeyCode::Char('n') => {
                                 crossterm::execute!(io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
@@ -642,14 +576,12 @@ async fn run_browse_loop<A: ClickUpApi>(
                                 crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
                                 terminal.clear()?;
 
-                                // Invalidate and reload task list
-                                return Box::pin(run_browse_loop(api, terminal, all_flag, mine_only)).await;
+                                continue 'reload;
                             }
                             _ => {}
                         },
                         BrowseState::CommentEditor => {
                             if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                                // Submit comment
                                 if !comment_buffer.trim().is_empty() {
                                     terminal.draw(|f| {
                                         crate::ui::styles::render_background(f);
@@ -666,7 +598,8 @@ async fn run_browse_loop<A: ClickUpApi>(
                                         .await
                                         .is_ok()
                                     {
-                                        cached_comments.remove(&current_task.id);
+                                        cached_comments.lock().unwrap().remove(&current_task.id);
+                                        loading_tasks.remove(&current_task.id);
                                     }
                                 }
                                 state = BrowseState::List;
@@ -722,7 +655,8 @@ async fn run_browse_loop<A: ClickUpApi>(
                                     .await
                                     .is_ok()
                                 {
-                                    cached_task_details.remove(&current_task.id);
+                                    cached_task_details.lock().unwrap().remove(&current_task.id);
+                                    loading_tasks.remove(&current_task.id);
                                     if let Some(t) = tasks.iter_mut().find(|t| t.id == current_task.id) {
                                         t.status.status = selected_stat.status.clone();
                                     }
@@ -737,6 +671,59 @@ async fn run_browse_loop<A: ClickUpApi>(
         }
     }
 
+    } // 'reload
+
+    Ok(())
+}
+
+fn draw_loader(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    message: &str,
+    sub_message: &str,
+) -> Result<()> {
+    terminal.draw(|f| {
+        let size = f.area();
+        crate::ui::styles::render_background(f);
+
+        // Center popup layout for loading
+        let percent_x = 60;
+        let percent_y = 35;
+        let popup_layout = get_popup_layout(size, percent_x, percent_y);
+        f.render_widget(Clear, popup_layout);
+
+        let lines = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ⚡ CLICKUP INTERACTIVE BROWSE", Style::default().fg(crate::ui::styles::COLOR_PRIMARY).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  Status: ", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                Span::styled(message, Style::default().fg(crate::ui::styles::COLOR_FG).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  Details: ", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
+                Span::styled(sub_message, Style::default().fg(crate::ui::styles::COLOR_WARN)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  Please wait while we sync with ClickUp...", Style::default().fg(crate::ui::styles::COLOR_MUTED).add_modifier(Modifier::ITALIC)),
+            ]),
+        ];
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Syncing ClickUp Data ")
+            .border_style(crate::ui::styles::style_border_active())
+            .padding(Padding::new(2, 2, 1, 1));
+
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
+
+        f.render_widget(paragraph, popup_layout);
+    })?;
     Ok(())
 }
 
@@ -764,4 +751,22 @@ fn get_popup_layout(r: Rect, percent_x: u16, percent_y: u16) -> Rect {
             .as_ref(),
         )
         .split(popup_layout[1])[1]
+}
+
+fn wrap_text_by_chars(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+    let mut result = Vec::new();
+    for line in text.split('\n') {
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            result.push(String::new());
+        } else {
+            for chunk in chars.chunks(width) {
+                result.push(chunk.iter().collect::<String>());
+            }
+        }
+    }
+    result
 }

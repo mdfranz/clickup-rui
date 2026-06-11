@@ -6,6 +6,7 @@ use crate::util::errors::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+#[derive(Clone)]
 pub struct CachedClient<A: ClickUpApi> {
     api: A,
     store: Arc<Mutex<CacheStore>>,
@@ -431,13 +432,18 @@ impl<A: ClickUpApi> ClickUpApi for CachedClient<A> {
         let task = self.api.update_task_status(task_id, status).await?;
 
         let mut store = self.store.lock().await;
-        // Invalidate task detail cache
-        store.task_detail_by_task.remove(task_id);
-        // Remove that task from first cached list containing it
+        // Update task detail cache
+        store.task_detail_by_task.insert(
+            task_id.to_string(),
+            CacheEntry {
+                value: task.clone(),
+                expires_at: now_secs() + TTL_TASK_DETAIL,
+            },
+        );
+        // Update that task in all cached lists containing it
         for list_entry in store.tasks.values_mut() {
             if let Some(pos) = list_entry.tasks.iter().position(|t| t.id == task_id) {
-                list_entry.tasks.remove(pos);
-                break;
+                list_entry.tasks[pos] = task.clone();
             }
         }
         store.mark_dirty();
@@ -514,7 +520,15 @@ mod tests {
 
         async fn get_task_detail(&self, _task_id: &str) -> Result<Task> { unimplemented!() }
         async fn get_task_comments(&self, _task_id: &str) -> Result<Vec<Comment>> { unimplemented!() }
-        async fn update_task_status(&self, _task_id: &str, _status: &str) -> Result<Task> { unimplemented!() }
+        async fn update_task_status(&self, task_id: &str, status: &str) -> Result<Task> {
+            let mut tasks = self.tasks.lock().unwrap();
+            if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
+                t.status.status = status.to_string();
+                t.date_updated = Some("9999".to_string());
+                return Ok(t.clone());
+            }
+            Err(AppError::Other("Task not found".to_string()))
+        }
         async fn create_task_comment(&self, _task_id: &str, _comment_text: &str) -> Result<Comment> { unimplemented!() }
         async fn create_task(
             &self,
@@ -650,6 +664,49 @@ mod tests {
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].id, "1");
         assert_eq!(res[0].name, "Task One");
+    }
+
+    #[tokio::test]
+    async fn test_cache_update_task_status() {
+        let store = Arc::new(Mutex::new(CacheStore::new()));
+        
+        let t1 = make_test_task("1", "Task One", "1000", "open");
+        
+        {
+            let mut s = store.lock().await;
+            s.tasks.insert("list_123".to_string(), TaskListCacheEntry {
+                tasks: vec![t1.clone()],
+                fetched_at: now_secs(),
+                max_date_updated: 1000,
+                includes_closed: false,
+            });
+        }
+        
+        let mock_api = MockApi {
+            tasks: std::sync::Mutex::new(vec![t1.clone()]),
+            incremental_tasks: std::sync::Mutex::new(vec![]),
+            should_fail: AtomicBool::new(false),
+        };
+        
+        let cached_client = CachedClient::new(mock_api, store.clone(), false);
+        
+        // Update task status from "open" to "in progress"
+        let updated = cached_client.update_task_status("1", "in progress").await.unwrap();
+        assert_eq!(updated.status.status, "in progress");
+        assert_eq!(updated.date_updated.as_deref(), Some("9999"));
+        
+        // Verify cache store task list now contains the updated task
+        {
+            let s = store.lock().await;
+            let entry = s.tasks.get("list_123").unwrap();
+            assert_eq!(entry.tasks.len(), 1);
+            assert_eq!(entry.tasks[0].status.status, "in progress");
+            assert_eq!(entry.tasks[0].date_updated.as_deref(), Some("9999"));
+            
+            // Verify task detail cache also has the updated task
+            let detail = s.task_detail_by_task.get("1").unwrap();
+            assert_eq!(detail.value.status.status, "in progress");
+        }
     }
 }
 

@@ -16,7 +16,9 @@ pub async fn run_show<A: ClickUpApi>(api: &A) -> Result<()> {
             println!("  AI Settings:");
             println!("    Provider:   {}", cfg.ai_provider);
             println!("    Model:      {}", cfg.ai_model);
-            println!("    Ollama URL: {}", cfg.ollama_url);
+            if let Some(ref url) = cfg.ollama_url {
+                println!("    Ollama URL: {}", url);
+            }
         }
         Err(_) => {
             println!("No configuration found. Run 'clickup-rui setup' first.");

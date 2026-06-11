@@ -16,7 +16,7 @@ use crate::app::Commands;
 use crate::clickup::api::ClickUpApi;
 use crate::util::errors::Result;
 
-pub async fn route_command<A: ClickUpApi>(api: &A, cmd: Commands) -> Result<()> {
+pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Commands) -> Result<()> {
     match cmd {
         Commands::Menu => {
             Box::pin(menu::run_menu(api)).await?;

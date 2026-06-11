@@ -5,6 +5,7 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
+#[derive(Clone)]
 pub struct ClickUpClient {
     client: reqwest::Client,
     pat: String,

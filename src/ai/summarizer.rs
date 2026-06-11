@@ -70,7 +70,7 @@ impl AiSummarizer {
             folders: vec![],
             ai_provider: "gemini".to_string(),
             ai_model: "gemini-3.5-flash".to_string(),
-            ollama_url: "http://localhost:11434".to_string(),
+            ollama_url: Some("http://localhost:11434".to_string()),
         });
 
         Self {
@@ -94,7 +94,7 @@ impl AiSummarizer {
         match self.config.ai_provider.as_str() {
             "ollama" => {
                 let model = self.get_effective_model().to_string();
-                let url = format!("{}/api/generate", self.config.ollama_url.trim_end_matches('/'));
+                let url = format!("{}/api/generate", self.config.ollama_url.as_deref().unwrap_or("http://localhost:11434").trim_end_matches('/'));
                 let req_body = OllamaRequest {
                     model,
                     prompt: prompt.to_string(),

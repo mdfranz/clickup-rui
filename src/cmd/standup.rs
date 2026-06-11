@@ -7,6 +7,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
 use ratatui::Terminal;
 use std::collections::HashSet;
@@ -31,28 +32,10 @@ struct StandupReport {
 }
 
 pub async fn run_standup<A: ClickUpApi>(api: &A, all_flag: bool, mine_only: bool) -> Result<()> {
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let res = run_standup_loop(api, &mut terminal, all_flag, mine_only).await;
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    res
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    run_standup_loop(api, guard.inner(), all_flag, mine_only).await
 }
+
 
 async fn run_standup_loop<A: ClickUpApi>(
     api: &A,
@@ -204,7 +187,15 @@ async fn run_standup_loop<A: ClickUpApi>(
                         main_layout[0],
                     );
 
-                    let p_comment = Paragraph::new(rep.comment.as_str())
+                    let inner_width = (main_layout[1].width as usize).saturating_sub(6);
+                    let wrapped_lines = wrap_text_by_chars(rep.comment.as_str(), inner_width);
+
+                    let paragraph_lines: Vec<Line> = wrapped_lines
+                        .iter()
+                        .map(|l| Line::from(l.as_str()))
+                        .collect();
+
+                    let p_comment = Paragraph::new(paragraph_lines)
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
@@ -216,16 +207,11 @@ async fn run_standup_loop<A: ClickUpApi>(
                     f.render_widget(p_comment, main_layout[1]);
 
                     // Dynamic cursor placement tracking current length and wrapped lines
-                    let lines: Vec<&str> = rep.comment.split('\n').collect();
-                    let last_line = lines.last().copied().unwrap_or("");
-                    let last_line_len = last_line.chars().count();
+                    let cursor_row = wrapped_lines.len().saturating_sub(1) as u16;
+                    let cursor_col = wrapped_lines.last().map(|l| l.chars().count()).unwrap_or(0) as u16;
 
-                    let inner_width = (main_layout[1].width as usize).saturating_sub(6);
-                    let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
-                    let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
-
-                    let cursor_y = main_layout[1].y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
-                    let cursor_x = main_layout[1].x + 3 + extra_x as u16;
+                    let cursor_y = main_layout[1].y + 2 + cursor_row;
+                    let cursor_x = main_layout[1].x + 3 + cursor_col;
 
                     let safe_cursor_x = cursor_x.min(main_layout[1].x + main_layout[1].width.saturating_sub(2));
                     let safe_cursor_y = cursor_y.min(main_layout[1].y + main_layout[1].height.saturating_sub(2));
@@ -514,4 +500,22 @@ async fn run_standup_loop<A: ClickUpApi>(
             }
         }
     }
+}
+
+fn wrap_text_by_chars(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+    let mut result = Vec::new();
+    for line in text.split('\n') {
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            result.push(String::new());
+        } else {
+            for chunk in chars.chunks(width) {
+                result.push(chunk.iter().collect::<String>());
+            }
+        }
+    }
+    result
 }

@@ -18,7 +18,9 @@ pub async fn run_config(
         println!("Current AI Configuration:");
         println!("  Provider:   {}", config.ai_provider);
         println!("  Model:      {}", config.ai_model);
-        println!("  Ollama URL: {}", config.ollama_url);
+        if let Some(ref url) = config.ollama_url {
+            println!("  Ollama URL: {}", url);
+        }
         return Ok(());
     }
 
@@ -44,14 +46,24 @@ pub async fn run_config(
     }
 
     if let Some(u) = ollama_url {
-        config.ollama_url = u;
+        config.ollama_url = Some(u);
+    }
+
+    // Ensure ollama_url is removed if not using ollama provider
+    if config.ai_provider != "ollama" {
+        config.ollama_url = None;
+    } else if config.ollama_url.is_none() {
+        // Default to localhost if provider is ollama and no url is configured
+        config.ollama_url = Some("http://localhost:11434".to_string());
     }
 
     config.save()?;
     println!("AI configuration updated and saved successfully.");
     println!("  Provider:   {}", config.ai_provider);
     println!("  Model:      {}", config.ai_model);
-    println!("  Ollama URL: {}", config.ollama_url);
+    if let Some(ref url) = config.ollama_url {
+        println!("  Ollama URL: {}", url);
+    }
 
     Ok(())
 }

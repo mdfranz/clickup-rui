@@ -19,8 +19,8 @@ fn default_ai_model() -> String {
     "gemini-3.5-flash".to_string()
 }
 
-fn default_ollama_url() -> String {
-    "http://localhost:11434".to_string()
+fn default_ollama_url() -> Option<String> {
+    Some("http://localhost:11434".to_string())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,8 +37,8 @@ pub struct Config {
     #[serde(default = "default_ai_model")]
     pub ai_model: String,
 
-    #[serde(default = "default_ollama_url")]
-    pub ollama_url: String,
+    #[serde(default = "default_ollama_url", skip_serializing_if = "Option::is_none")]
+    pub ollama_url: Option<String>,
 }
 
 impl Config {
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(loaded.folders[0].name, "My Folder");
         assert_eq!(loaded.ai_provider, "gemini");
         assert_eq!(loaded.ai_model, "gemini-3.5-flash");
-        assert_eq!(loaded.ollama_url, "http://localhost:11434");
+        assert_eq!(loaded.ollama_url, Some("http://localhost:11434".to_string()));
 
         // Clean up env
         match original_xdg {

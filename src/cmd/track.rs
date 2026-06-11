@@ -228,7 +228,7 @@ async fn track_user_activities<A: ClickUpApi>(
             csv_content.push_str(&row);
         }
 
-        let date_str = Local::now().format("%y%m%d%M").to_string();
+        let date_str = Local::now().format("%y%m%d-%H%M%S").to_string();
         let filename = format!("{}-{}.csv", user.id, date_str);
 
         std::fs::write(&filename, csv_content)?;
@@ -238,7 +238,7 @@ async fn track_user_activities<A: ClickUpApi>(
 
     if json_flag {
         let json_content = serde_json::to_string_pretty(&activities)?;
-        let date_str = Local::now().format("%y%m%d%M").to_string();
+        let date_str = Local::now().format("%y%m%d-%H%M%S").to_string();
         let filename = format!("{}-{}.json", user.id, date_str);
 
         std::fs::write(&filename, json_content)?;
@@ -327,20 +327,10 @@ async fn run_scrollable_tui(
     show_raw: bool,
 ) -> Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use ratatui::backend::CrosstermBackend;
     use ratatui::widgets::{Block, Borders, Paragraph};
-    use ratatui::Terminal;
-    use std::io;
 
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    let terminal = guard.inner();
 
     let mut scroll: u16 = 0;
     let content = if show_raw {
@@ -401,36 +391,18 @@ async fn run_scrollable_tui(
         }
     }
 
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
     Ok(())
 }
 
 async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-    use ratatui::backend::CrosstermBackend;
     use ratatui::layout::{Alignment, Constraint, Direction, Layout};
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph};
-    use ratatui::Terminal;
-    use std::io;
 
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    let terminal = guard.inner();
 
     let mut list_state = ListState::default();
     list_state.select(Some(0));
@@ -594,14 +566,6 @@ async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
             }
         }
     }
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
 
     Ok(selected_user)
 }

@@ -18,25 +18,9 @@ enum SetupStep {
 }
 
 pub async fn run_setup<A: ClickUpApi>(api: &A) -> Result<()> {
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let res = run_setup_loop(api, &mut terminal).await;
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    let res = run_setup_loop(api, guard.inner()).await;
+    drop(guard);
 
     match res {
         Ok(summary) => {
@@ -48,6 +32,7 @@ pub async fn run_setup<A: ClickUpApi>(api: &A) -> Result<()> {
         Err(e) => Err(e),
     }
 }
+
 
 async fn run_setup_loop<A: ClickUpApi>(
     api: &A,
@@ -289,23 +274,27 @@ async fn run_setup_loop<A: ClickUpApi>(
                                     // At least one folder should be selected ideally, or allow empty but warn
                                 }
 
-                                let (ai_provider, ai_model, ollama_url) = if let Ok(existing) = Config::load() {
-                                    (existing.ai_provider, existing.ai_model, existing.ollama_url)
-                                } else {
-                                    ("gemini".to_string(), "gemini-3.5-flash".to_string(), "http://localhost:11434".to_string())
-                                };
+                                let (ai_provider, ai_model, mut ollama_url) = if let Ok(existing) = Config::load() {
+                                     (existing.ai_provider, existing.ai_model, existing.ollama_url)
+                                 } else {
+                                     ("gemini".to_string(), "gemini-3.5-flash".to_string(), None)
+                                 };
 
-                                let cfg = Config {
-                                    workspace_id: ws.id.clone(),
-                                    workspace_name: ws.name.clone(),
-                                    space_id: sp.id.clone(),
-                                    space_name: sp.name.clone(),
-                                    folders: config_folders.clone(),
-                                    ai_provider,
-                                    ai_model,
-                                    ollama_url,
-                                };
-                                cfg.save()?;
+                                 if ai_provider != "ollama" {
+                                     ollama_url = None;
+                                 }
+
+                                 let cfg = Config {
+                                     workspace_id: ws.id.clone(),
+                                     workspace_name: ws.name.clone(),
+                                     space_id: sp.id.clone(),
+                                     space_name: sp.name.clone(),
+                                     folders: config_folders.clone(),
+                                     ai_provider,
+                                     ai_model,
+                                     ollama_url,
+                                 };
+                                 cfg.save()?;
 
                                 return Ok(format!(
                                     "\nSetup successfully completed!\n\

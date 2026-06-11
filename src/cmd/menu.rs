@@ -7,15 +7,12 @@ fn needs_terminal_pause(cmd: &Commands) -> bool {
     matches!(cmd, Commands::Show | Commands::Setup)
 }
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Terminal;
-use std::io;
 
-pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
+pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
     let menu_options = vec![
         (
             "Browse Interactive View",
@@ -47,21 +44,13 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
         ("Show active config", Commands::Show),
     ];
 
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
 
     let mut list_state = ListState::default();
     list_state.select(Some(0));
 
     loop {
-        terminal.draw(|f| {
+        guard.inner().draw(|f| {
             let size = f.area();
             crate::ui::styles::render_background(f);
 
@@ -96,30 +85,14 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
                 )
                 .split(size);
 
-            if show_banner {
-                let banner = r#"   __   __   _              _   _      _____ _   _ _____
-  / _| / /  (_) ___ _ __   | | | |    |_   _| | | |_   _|
- | |  / /   | |/ __| '_ \  | | | |______|_| | | | | |_| |
- | |_/ /____| | (__| |_) | | |_| |______| | | |_| |  | |
-  \__\_____/|_|\___| .__/   \___/       |_|  \___/   |_|
-                   |_|                                   "#;
-
-                f.render_widget(
-                    Paragraph::new(banner)
-                        .style(crate::ui::styles::style_title())
-                        .alignment(Alignment::Center),
-                    chunks[0],
-                );
-            } else {
-                let title_span = Span::styled(
-                    "⚡ CLICKUP CLI/TUI MENU ⚡",
-                    crate::ui::styles::style_title(),
-                );
-                f.render_widget(
-                    Paragraph::new(Line::from(vec![title_span])).alignment(Alignment::Center),
-                    chunks[0],
-                );
-            }
+            let title_span = Span::styled(
+                "⚡ CLICKUP CLI/TUI MENU ⚡",
+                crate::ui::styles::style_title(),
+            );
+            f.render_widget(
+                Paragraph::new(Line::from(vec![title_span])).alignment(Alignment::Center),
+                chunks[0],
+            );
 
             let items: Vec<ListItem> = menu_options
                 .iter()
@@ -209,12 +182,7 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
                             let command_to_run = menu_options[idx].1.clone();
 
                             // 1. Leave TUI screen temporarily
-                            crossterm::execute!(
-                                terminal.backend_mut(),
-                                crossterm::terminal::LeaveAlternateScreen,
-                                crossterm::event::DisableMouseCapture
-                            )?;
-                            crossterm::terminal::disable_raw_mode()?;
+                            drop(guard);
 
                             // 2. Set environment menu flag
                             set_menu_mode(true);
@@ -270,12 +238,8 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
                             }
 
                             // 7. Re-enter alternate screen and clear terminal
-                            crossterm::execute!(
-                                io::stdout(),
-                                crossterm::terminal::EnterAlternateScreen,
-                                crossterm::event::EnableMouseCapture
-                            )?;
-                            terminal.clear()?;
+                            guard = crate::ui::terminal::TerminalGuard::create()?;
+                            guard.inner().clear()?;
                         }
                         _ => {}
                     }
@@ -283,14 +247,6 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
             }
         }
     }
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
 
     Ok(())
 }

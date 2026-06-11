@@ -6,6 +6,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
 use ratatui::Terminal;
 use std::io;
@@ -25,28 +26,10 @@ enum NewTaskStep {
 }
 
 pub async fn run_new_task<A: ClickUpApi>(api: &A) -> Result<()> {
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let res = run_new_task_loop(api, &mut terminal).await;
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    res
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    run_new_task_loop(api, guard.inner()).await
 }
+
 
 #[allow(unused_assignments)]
 async fn run_new_task_loop<A: ClickUpApi>(
@@ -113,7 +96,7 @@ async fn run_new_task_loop<A: ClickUpApi>(
 
         if step == NewTaskStep::AssigneeSelect {
             let current_selected = users_state.selected().unwrap_or(0);
-            if current_selected > filtered_users.len() {
+            if current_selected >= filtered_users.len() {
                 users_state.select(Some(filtered_users.len()));
             }
         }
@@ -198,7 +181,15 @@ async fn run_new_task_loop<A: ClickUpApi>(
                     f.render_stateful_widget(list, chunks[1], &mut statuses_state);
                 }
                 NewTaskStep::NameInput => {
-                    let p = Paragraph::new(name.as_str())
+                    let inner_width = (chunks[1].width as usize).saturating_sub(6);
+                    let wrapped_lines = wrap_text_by_chars(name.as_str(), inner_width);
+
+                    let paragraph_lines: Vec<Line> = wrapped_lines
+                        .iter()
+                        .map(|l| Line::from(l.as_str()))
+                        .collect();
+
+                    let p = Paragraph::new(paragraph_lines)
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
@@ -210,16 +201,11 @@ async fn run_new_task_loop<A: ClickUpApi>(
                     f.render_widget(p, chunks[1]);
 
                     // Dynamic cursor placement tracking current length and wrapped lines
-                    let lines: Vec<&str> = name.split('\n').collect();
-                    let last_line = lines.last().copied().unwrap_or("");
-                    let last_line_len = last_line.chars().count();
+                    let cursor_row = wrapped_lines.len().saturating_sub(1) as u16;
+                    let cursor_col = wrapped_lines.last().map(|l| l.chars().count()).unwrap_or(0) as u16;
 
-                    let inner_width = (chunks[1].width as usize).saturating_sub(6);
-                    let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
-                    let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
-
-                    let cursor_y = chunks[1].y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
-                    let cursor_x = chunks[1].x + 3 + extra_x as u16;
+                    let cursor_y = chunks[1].y + 2 + cursor_row;
+                    let cursor_x = chunks[1].x + 3 + cursor_col;
 
                     let safe_cursor_x = cursor_x.min(chunks[1].x + chunks[1].width.saturating_sub(2));
                     let safe_cursor_y = cursor_y.min(chunks[1].y + chunks[1].height.saturating_sub(2));
@@ -227,7 +213,15 @@ async fn run_new_task_loop<A: ClickUpApi>(
                     f.set_cursor_position(ratatui::layout::Position::new(safe_cursor_x, safe_cursor_y));
                 }
                 NewTaskStep::DescriptionInput => {
-                    let p = Paragraph::new(description.as_str())
+                    let inner_width = (chunks[1].width as usize).saturating_sub(6);
+                    let wrapped_lines = wrap_text_by_chars(description.as_str(), inner_width);
+
+                    let paragraph_lines: Vec<Line> = wrapped_lines
+                        .iter()
+                        .map(|l| Line::from(l.as_str()))
+                        .collect();
+
+                    let p = Paragraph::new(paragraph_lines)
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
@@ -239,16 +233,11 @@ async fn run_new_task_loop<A: ClickUpApi>(
                     f.render_widget(p, chunks[1]);
 
                     // Dynamic cursor placement tracking current length and wrapped lines
-                    let lines: Vec<&str> = description.split('\n').collect();
-                    let last_line = lines.last().copied().unwrap_or("");
-                    let last_line_len = last_line.chars().count();
+                    let cursor_row = wrapped_lines.len().saturating_sub(1) as u16;
+                    let cursor_col = wrapped_lines.last().map(|l| l.chars().count()).unwrap_or(0) as u16;
 
-                    let inner_width = (chunks[1].width as usize).saturating_sub(6);
-                    let extra_y = if inner_width > 0 { last_line_len / inner_width } else { 0 };
-                    let extra_x = if inner_width > 0 { last_line_len % inner_width } else { 0 };
-
-                    let cursor_y = chunks[1].y + 2 + (lines.len() - 1) as u16 + extra_y as u16;
-                    let cursor_x = chunks[1].x + 3 + extra_x as u16;
+                    let cursor_y = chunks[1].y + 2 + cursor_row;
+                    let cursor_x = chunks[1].x + 3 + cursor_col;
 
                     let safe_cursor_x = cursor_x.min(chunks[1].x + chunks[1].width.saturating_sub(2));
                     let safe_cursor_y = cursor_y.min(chunks[1].y + chunks[1].height.saturating_sub(2));
@@ -647,4 +636,22 @@ async fn run_new_task_loop<A: ClickUpApi>(
             }
         }
     }
+}
+
+fn wrap_text_by_chars(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+    let mut result = Vec::new();
+    for line in text.split('\n') {
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            result.push(String::new());
+        } else {
+            for chunk in chars.chunks(width) {
+                result.push(chunk.iter().collect::<String>());
+            }
+        }
+    }
+    result
 }

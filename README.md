@@ -59,10 +59,26 @@ Clone the repository and build the binary:
 ```bash
 git clone https://github.com/mdfranz/clickup-rui.git
 cd clickup-rui
-cargo build --release
+make release
 ```
 
 The compiled binary will be available at `./target/release/clickup-rui`.
+
+### Developer Workflow with Makefile
+
+A fully-featured **Makefile** is provided to streamline common development tasks. Run `make help` (or just `make`) to see the complete list of available targets:
+
+```bash
+make help
+```
+
+Key targets include:
+* `make build` / `make release`: Build debug or optimized release binary.
+* `make run` / `make run-release`: Execute the debug or release binary directly.
+* `make test`: Run all unit and integration tests.
+* `make clippy` / `make fmt`: Code quality linting and automatic formatting.
+* `make setup` / `make browse` / `make menu`: Launch interactive wizards and menus directly.
+* `make install`: Copy the binary directly into your local `~/.local/bin/`.
 
 ### Runtime Requirements
 

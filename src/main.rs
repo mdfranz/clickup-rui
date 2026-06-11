@@ -18,7 +18,7 @@ use clap::Parser;
 use std::fs;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing_subscriber::{fmt, prelude::*, Registry};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
 fn init_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let log_path = crate::config::paths::get_log_path();
@@ -32,12 +32,15 @@ fn init_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .append(true)
         .open(&log_path)?;
 
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
     let file_layer = fmt::layer()
         .with_writer(std::sync::Mutex::new(file))
         .json()
         .with_target(true);
 
-    let subscriber = Registry::default().with(file_layer);
+    let subscriber = Registry::default().with(filter).with(file_layer);
     tracing::subscriber::set_global_default(subscriber)?;
     Ok(())
 }

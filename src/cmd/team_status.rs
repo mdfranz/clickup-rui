@@ -60,52 +60,52 @@ pub async fn run_team_status<A: ClickUpApi>(
                     });
                 }
 
-                for assignee in &task.assignees {
-                    let done_ms = task
-                        .date_done
-                        .as_deref()
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or(0);
-                    let closed_ms = task
-                        .date_closed
-                        .as_deref()
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or(0);
+                // ClickUp v2 doesn't expose who performed a transition, so attribute
+                // done/closed/updated to the creator as the best available proxy.
+                let done_ms = task
+                    .date_done
+                    .as_deref()
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .unwrap_or(0);
+                let closed_ms = task
+                    .date_closed
+                    .as_deref()
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .unwrap_or(0);
 
-                    if done_ms >= date_from {
-                        activities.push(Activity {
-                            id: format!("{}-done-{}", task.id, assignee.id),
-                            user: assignee.clone(),
-                            type_: "completed task".to_string(),
-                            date: done_ms.to_string(),
-                            task_id: task.id.clone(),
-                            source: "api".to_string(),
-                            detail: Some(task.status.status.clone()),
-                            task_name: Some(task.name.clone()),
-                        });
-                    } else if closed_ms >= date_from {
-                        activities.push(Activity {
-                            id: format!("{}-closed-{}", task.id, assignee.id),
-                            user: assignee.clone(),
-                            type_: "closed task".to_string(),
-                            date: closed_ms.to_string(),
-                            task_id: task.id.clone(),
-                            source: "api".to_string(),
-                            detail: Some(task.status.status.clone()),
-                            task_name: Some(task.name.clone()),
-                        });
-                    } else if updated_ms >= date_from && updated_ms > created_ms {
-                        activities.push(Activity {
-                            id: format!("{}-updated-{}", task.id, assignee.id),
-                            user: assignee.clone(),
-                            type_: "updated task".to_string(),
-                            date: updated_ms.to_string(),
-                            task_id: task.id.clone(),
-                            source: "api".to_string(),
-                            detail: Some(task.status.status.clone()),
-                            task_name: Some(task.name.clone()),
-                        });
-                    }
+                if done_ms >= date_from {
+                    activities.push(Activity {
+                        id: format!("{}-done", task.id),
+                        user: task.creator.clone(),
+                        type_: "completed task".to_string(),
+                        date: done_ms.to_string(),
+                        task_id: task.id.clone(),
+                        source: "api".to_string(),
+                        detail: Some(task.status.status.clone()),
+                        task_name: Some(task.name.clone()),
+                    });
+                } else if closed_ms >= date_from {
+                    activities.push(Activity {
+                        id: format!("{}-closed", task.id),
+                        user: task.creator.clone(),
+                        type_: "closed task".to_string(),
+                        date: closed_ms.to_string(),
+                        task_id: task.id.clone(),
+                        source: "api".to_string(),
+                        detail: Some(task.status.status.clone()),
+                        task_name: Some(task.name.clone()),
+                    });
+                } else if updated_ms >= date_from && updated_ms > created_ms {
+                    activities.push(Activity {
+                        id: format!("{}-updated", task.id),
+                        user: task.creator.clone(),
+                        type_: "updated task".to_string(),
+                        date: updated_ms.to_string(),
+                        task_id: task.id.clone(),
+                        source: "api".to_string(),
+                        detail: Some(task.status.status.clone()),
+                        task_name: Some(task.name.clone()),
+                    });
                 }
 
                 if updated_ms >= date_from {
@@ -212,20 +212,10 @@ async fn run_scrollable_tui(
     show_raw: bool,
 ) -> Result<()> {
     use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-    use ratatui::backend::CrosstermBackend;
     use ratatui::widgets::{Block, Borders, Paragraph};
-    use ratatui::Terminal;
-    use std::io;
 
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut guard = crate::ui::terminal::TerminalGuard::create()?;
+    let terminal = guard.inner();
 
     let mut scroll: u16 = 0;
     let content = if show_raw {
@@ -286,14 +276,6 @@ async fn run_scrollable_tui(
             }
         }
     }
-
-    crossterm::terminal::disable_raw_mode()?;
-    crossterm::execute!(
-        terminal.backend_mut(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
 
     Ok(())
 }
