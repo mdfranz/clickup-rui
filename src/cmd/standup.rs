@@ -1,7 +1,7 @@
 use crate::clickup::api::ClickUpApi;
 use crate::clickup::models::{Status, Task};
 use crate::config::Config;
-use crate::util::errors::{AppError, Result};
+use crate::util::errors::Result;
 use crate::util::filter::should_include_task;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
@@ -82,9 +82,36 @@ async fn run_standup_loop<A: ClickUpApi>(
     }
 
     if tasks.is_empty() {
-        return Err(AppError::Other(
-            "No active tasks found to report on.".to_string(),
-        ));
+        terminal.draw(|f| {
+            crate::ui::styles::render_background(f);
+            f.render_widget(
+                Paragraph::new(
+                    "\n  No active tasks found to report on.\n\n  Press any key to return.",
+                )
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Daily Standup ")
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
+                )
+                .style(
+                    Style::default()
+                        .fg(crate::ui::styles::COLOR_FG)
+                        .bg(crate::ui::styles::COLOR_BG),
+                ),
+                f.area(),
+            );
+        })?;
+        loop {
+            if event::poll(std::time::Duration::from_millis(100))? {
+                if let Event::Key(k) = event::read()? {
+                    if k.kind == KeyEventKind::Press {
+                        break;
+                    }
+                }
+            }
+        }
+        return Ok(());
     }
 
     let mut select_state = ListState::default();

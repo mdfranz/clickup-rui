@@ -40,7 +40,9 @@ pub async fn run_setup<A: ClickUpApi>(api: &A) -> Result<()> {
 
     match res {
         Ok(summary) => {
-            println!("{}", summary);
+            if !summary.is_empty() {
+                println!("{}", summary);
+            }
             Ok(())
         }
         Err(e) => Err(e),
@@ -188,10 +190,10 @@ async fn run_setup_loop<A: ClickUpApi>(
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('q') => {
-                            return Err(AppError::Other("Setup cancelled by user.".to_string()));
+                            return Ok(String::new());
                         }
                         KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                            return Err(AppError::Other("Setup cancelled by user.".to_string()));
+                            return Ok(String::new());
                         }
                         KeyCode::Up | KeyCode::Char('k') => match step {
                             SetupStep::SelectWorkspace => {

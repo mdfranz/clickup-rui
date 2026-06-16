@@ -1,7 +1,7 @@
 use crate::clickup::api::ClickUpApi;
 use crate::clickup::models::{Comment, Status, Task};
 use crate::config::Config;
-use crate::util::errors::{AppError, Result};
+use crate::util::errors::Result;
 use crate::util::filter::should_include_task;
 use crate::util::format::{format_comment_date, format_task_date};
 use crate::util::sort::{sort_comments_by_date_desc, sort_tasks_by_updated_desc};
@@ -82,9 +82,36 @@ async fn run_browse_loop<A: ClickUpApi>(
     sort_tasks_by_updated_desc(&mut tasks);
 
     if tasks.is_empty() {
-        return Err(AppError::Other(
-            "No active tasks found matching criteria to browse.".to_string(),
-        ));
+        terminal.draw(|f| {
+            crate::ui::styles::render_background(f);
+            f.render_widget(
+                Paragraph::new(
+                    "\n  No active tasks found matching the current criteria.\n\n  Press any key to return.",
+                )
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Browse Tasks ")
+                        .border_style(crate::ui::styles::style_border_active()),
+                )
+                .style(
+                    Style::default()
+                        .fg(crate::ui::styles::COLOR_FG)
+                        .bg(crate::ui::styles::COLOR_BG),
+                ),
+                f.area(),
+            );
+        })?;
+        loop {
+            if event::poll(std::time::Duration::from_millis(100))? {
+                if let Event::Key(k) = event::read()? {
+                    if k.kind == KeyEventKind::Press {
+                        break;
+                    }
+                }
+            }
+        }
+        return Ok(());
     }
 
     let mut list_state = ListState::default();

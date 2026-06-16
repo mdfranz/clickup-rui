@@ -2,6 +2,10 @@ use crate::app::Commands;
 use crate::clickup::api::ClickUpApi;
 use crate::util::env::set_menu_mode;
 use crate::util::errors::Result;
+
+fn needs_terminal_pause(cmd: &Commands) -> bool {
+    matches!(cmd, Commands::Show | Commands::Setup)
+}
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
@@ -215,45 +219,57 @@ pub async fn run_menu<A: ClickUpApi>(api: &A) -> Result<()> {
                             // 2. Set environment menu flag
                             set_menu_mode(true);
 
-                            // 3. Execute command through router
+                            // 3. Determine if this command produces terminal output requiring a pause
+                            let show_pause = needs_terminal_pause(&command_to_run);
+
+                            // 4. Execute command through router
                             let route_res =
                                 Box::pin(crate::cmd::route_command(api, command_to_run)).await;
-                            if let Err(e) = route_res {
+                            let had_error = if let Err(e) = route_res {
                                 println!("\nError executing command: {}\n", e);
-                            }
+                                true
+                            } else {
+                                false
+                            };
 
-                            // 4. Unset menu flag
+                            // 5. Unset menu flag
                             set_menu_mode(false);
 
-                            // 5. Pause screen
-                            println!(
-                                "\n[Press any key to return to menu, or 'q' / Ctrl+C to exit...]"
-                            );
-                            crossterm::terminal::enable_raw_mode()?;
-                            let mut quit = false;
-                            loop {
-                                if event::poll(std::time::Duration::from_millis(100))? {
-                                    if let Event::Key(k) = event::read()? {
-                                        if k.kind == KeyEventKind::Press {
-                                            if k.code == KeyCode::Char('q')
-                                                || (k.code == KeyCode::Char('c')
-                                                    && k.modifiers
-                                                        .contains(event::KeyModifiers::CONTROL))
-                                            {
-                                                quit = true;
+                            // 6. Pause only when terminal output was produced or an error occurred
+                            if show_pause || had_error {
+                                println!(
+                                    "\n[Press any key to return to menu, or 'q' / Ctrl+C to exit...]"
+                                );
+                                crossterm::terminal::enable_raw_mode()?;
+                                let mut quit = false;
+                                loop {
+                                    if event::poll(std::time::Duration::from_millis(100))? {
+                                        if let Event::Key(k) = event::read()? {
+                                            if k.kind == KeyEventKind::Press {
+                                                if k.code == KeyCode::Char('q')
+                                                    || (k.code == KeyCode::Char('c')
+                                                        && k.modifiers
+                                                            .contains(event::KeyModifiers::CONTROL))
+                                                {
+                                                    quit = true;
+                                                }
+                                                break;
                                             }
-                                            break;
                                         }
                                     }
                                 }
+
+                                if quit {
+                                    crossterm::terminal::disable_raw_mode()?;
+                                    return Ok(());
+                                }
+                                // raw mode still active here; falls through to re-enter alternate screen
+                            } else {
+                                // TUI command with no terminal output — re-enable raw mode directly
+                                crossterm::terminal::enable_raw_mode()?;
                             }
 
-                            if quit {
-                                crossterm::terminal::disable_raw_mode()?;
-                                return Ok(());
-                            }
-
-                            // 6. Re-enter alternate screen and clear terminal
+                            // 7. Re-enter alternate screen and clear terminal
                             crossterm::execute!(
                                 io::stdout(),
                                 crossterm::terminal::EnterAlternateScreen,
