@@ -22,6 +22,7 @@ pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
                 mine: true,
             },
         ),
+        ("Team Workload View", Commands::Workload),
         (
             "Track User Activity Logs",
             Commands::Track {

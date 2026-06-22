@@ -11,6 +11,7 @@ pub mod summarize;
 pub mod tasks;
 pub mod team_status;
 pub mod track;
+pub mod workload;
 
 use crate::app::Commands;
 use crate::clickup::api::ClickUpApi;
@@ -48,6 +49,9 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
         Commands::Summarize { all, team, mine } => {
             let mine_only = if team { false } else { mine };
             summarize::run_summarize(api, all, mine_only).await?;
+        }
+        Commands::Workload => {
+            workload::run_workload(api).await?;
         }
         Commands::TeamStatus {
             days,

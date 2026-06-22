@@ -87,6 +87,8 @@ pub enum Commands {
         #[arg(long, default_value = "true", action = clap::ArgAction::Set, help = "Only show my tasks")]
         mine: bool,
     },
+    #[command(about = "View task workload grouped by team member")]
+    Workload,
     #[command(about = "Summarize recent activity logs across configured team folders")]
     TeamStatus {
         #[arg(long, short = 'd', default_value = "7", help = "Days window")]

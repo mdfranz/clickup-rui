@@ -7,7 +7,7 @@ use crate::util::format::{format_comment_date, format_task_date};
 use crate::util::sort::{sort_comments_by_date_desc, sort_tasks_by_updated_desc};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List as RatatuiList, ListItem, ListState, Padding, Paragraph, Wrap};
@@ -414,41 +414,9 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
 
             // Draw popups if needed
             if state == BrowseState::CommentEditor {
-                let popup_layout = get_popup_layout(size, 50, 30);
-                f.render_widget(Clear, popup_layout);
-
-                let inner_width = (popup_layout.width as usize).saturating_sub(6);
-                let wrapped_lines = wrap_text_by_chars(comment_buffer.as_str(), inner_width);
-
-                let paragraph_lines: Vec<Line> = wrapped_lines
-                    .iter()
-                    .map(|l| Line::from(l.as_str()))
-                    .collect();
-
-                let editor_p = Paragraph::new(paragraph_lines)
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Add Comment (Ctrl+s to post, Esc to close) ")
-                            .border_style(crate::ui::styles::style_border_active())
-                            .padding(Padding::new(2, 2, 1, 1)),
-                    )
-                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
-                f.render_widget(editor_p, popup_layout);
-
-                // Place cursor at the end of the text
-                let cursor_row = wrapped_lines.len().saturating_sub(1) as u16;
-                let cursor_col = wrapped_lines.last().map(|l| l.chars().count()).unwrap_or(0) as u16;
-
-                let cursor_y = popup_layout.y + 2 + cursor_row;
-                let cursor_x = popup_layout.x + 3 + cursor_col;
-
-                let safe_cursor_x = cursor_x.min(popup_layout.x + popup_layout.width.saturating_sub(2));
-                let safe_cursor_y = cursor_y.min(popup_layout.y + popup_layout.height.saturating_sub(2));
-
-                f.set_cursor_position(ratatui::layout::Position::new(safe_cursor_x, safe_cursor_y));
+                crate::ui::render_comment_editor(f, size, &comment_buffer);
             } else if state == BrowseState::StatusPicker {
-                let popup_layout = get_popup_layout(size, 40, 50);
+                let popup_layout = crate::ui::get_popup_layout(size, 40, 50);
                 f.render_widget(Clear, popup_layout);
 
                 let items: Vec<ListItem> = list_statuses
@@ -688,7 +656,7 @@ fn draw_loader(
         // Center popup layout for loading
         let percent_x = 60;
         let percent_y = 35;
-        let popup_layout = get_popup_layout(size, percent_x, percent_y);
+        let popup_layout = crate::ui::get_popup_layout(size, percent_x, percent_y);
         f.render_widget(Clear, popup_layout);
 
         let lines = vec![
@@ -727,46 +695,3 @@ fn draw_loader(
     Ok(())
 }
 
-fn get_popup_layout(r: Rect, percent_x: u16, percent_y: u16) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_y) / 2),
-                Constraint::Percentage(percent_y),
-                Constraint::Percentage((100 - percent_y) / 2),
-            ]
-            .as_ref(),
-        )
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_x) / 2),
-                Constraint::Percentage(percent_x),
-                Constraint::Percentage((100 - percent_x) / 2),
-            ]
-            .as_ref(),
-        )
-        .split(popup_layout[1])[1]
-}
-
-fn wrap_text_by_chars(text: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![text.to_string()];
-    }
-    let mut result = Vec::new();
-    for line in text.split('\n') {
-        let chars: Vec<char> = line.chars().collect();
-        if chars.is_empty() {
-            result.push(String::new());
-        } else {
-            for chunk in chars.chunks(width) {
-                result.push(chunk.iter().collect::<String>());
-            }
-        }
-    }
-    result
-}
