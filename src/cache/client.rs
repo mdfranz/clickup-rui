@@ -482,6 +482,13 @@ impl<A: ClickUpApi> ClickUpApi for CachedClient<A> {
 
         Ok(task)
     }
+
+    async fn invalidate_task(&self, task_id: &str) {
+        let mut store = self.store.lock().await;
+        store.task_detail_by_task.remove(task_id);
+        store.comments_by_task.remove(task_id);
+        store.mark_dirty();
+    }
 }
 
 #[cfg(test)]
@@ -706,6 +713,48 @@ mod tests {
             // Verify task detail cache also has the updated task
             let detail = s.task_detail_by_task.get("1").unwrap();
             assert_eq!(detail.value.status.status, "in progress");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_invalidate_task() {
+        let store = Arc::new(Mutex::new(CacheStore::new()));
+        
+        let t1 = make_test_task("1", "Task One", "1000", "open");
+        
+        {
+            let mut s = store.lock().await;
+            s.task_detail_by_task.insert("1".to_string(), CacheEntry {
+                value: t1.clone(),
+                expires_at: now_secs() + 100,
+            });
+            s.comments_by_task.insert("1".to_string(), CacheEntry {
+                value: vec![],
+                expires_at: now_secs() + 100,
+            });
+            s.task_detail_by_task.insert("2".to_string(), CacheEntry {
+                value: t1.clone(),
+                expires_at: now_secs() + 100,
+            });
+        }
+        
+        let mock_api = MockApi {
+            tasks: std::sync::Mutex::new(vec![]),
+            incremental_tasks: std::sync::Mutex::new(vec![]),
+            should_fail: AtomicBool::new(false),
+        };
+        
+        let cached_client = CachedClient::new(mock_api, store.clone(), false);
+        
+        // Invalidate task "1"
+        cached_client.invalidate_task("1").await;
+        
+        // Verify cache store: task "1" entries should be gone, task "2" should remain
+        {
+            let s = store.lock().await;
+            assert!(s.task_detail_by_task.get("1").is_none());
+            assert!(s.comments_by_task.get("1").is_none());
+            assert!(s.task_detail_by_task.get("2").is_some());
         }
     }
 }

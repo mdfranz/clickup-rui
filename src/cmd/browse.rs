@@ -533,6 +533,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                                 cached_task_details.lock().unwrap().remove(&current_task.id);
                                 cached_comments.lock().unwrap().remove(&current_task.id);
                                 loading_tasks.remove(&current_task.id);
+                                api.invalidate_task(&current_task.id).await;
                             }
                             KeyCode::Char('n') => {
                                 crossterm::execute!(io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;

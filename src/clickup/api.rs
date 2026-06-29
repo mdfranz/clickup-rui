@@ -23,4 +23,6 @@ pub trait ClickUpApi: Send + Sync {
         status: Option<&str>,
         assignees: Option<&[i64]>,
     ) -> Result<Task>;
+
+    async fn invalidate_task(&self, _task_id: &str) {}
 }
