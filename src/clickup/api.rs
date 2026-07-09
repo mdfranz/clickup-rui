@@ -22,7 +22,11 @@ pub trait ClickUpApi: Send + Sync {
         description: Option<&str>,
         status: Option<&str>,
         assignees: Option<&[i64]>,
+        tags: Option<&[String]>,
     ) -> Result<Task>;
+    async fn get_space_tags(&self, space_id: &str) -> Result<Vec<Tag>>;
+    async fn add_tag_to_task(&self, task_id: &str, tag_name: &str) -> Result<()>;
+    async fn remove_tag_from_task(&self, task_id: &str, tag_name: &str) -> Result<()>;
 
     async fn invalidate_task(&self, _task_id: &str) {}
 }

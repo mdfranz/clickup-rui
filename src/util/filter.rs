@@ -1,7 +1,7 @@
 use crate::clickup::models::Task;
 
 pub fn should_include_task(task: &Task, user_id: i64, show_all: bool, mine_only: bool) -> bool {
-    if mine_only && !task.assignees.iter().any(|u| u.id == user_id) {
+    if !show_all && mine_only && !task.assignees.iter().any(|u| u.id == user_id) {
         return false;
     }
 

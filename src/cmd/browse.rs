@@ -1,5 +1,5 @@
 use crate::clickup::api::ClickUpApi;
-use crate::clickup::models::{Comment, Status, Task};
+use crate::clickup::models::{Comment, Status, Tag, Task};
 use crate::config::Config;
 use crate::util::errors::Result;
 use crate::util::filter::should_include_task;
@@ -19,6 +19,9 @@ enum BrowseState {
     List,
     CommentEditor,
     StatusPicker,
+    TagPicker,
+    FilterEditor,
+    FilterTagPicker,
 }
 
 #[derive(PartialEq, Eq)]
@@ -137,9 +140,21 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
     let mut list_statuses: Vec<Status> = Vec::new();
     let mut statuses_state = ListState::default();
 
+    let mut space_tags: Vec<Tag> = Vec::new();
+    let mut tags_state = ListState::default();
+    let mut task_tag_selection: Vec<bool> = Vec::new();
+
+    let mut filter_query = String::new();
+    let mut filter_query_buffer = String::new();
+    let mut active_filter_tags: Vec<String> = Vec::new();
+    let mut filter_tags_state = ListState::default();
+    let mut filter_tag_selection: Vec<bool> = Vec::new();
+    let mut filtered_indices: Vec<usize> = (0..tasks.len()).collect();
+
     loop {
-        let current_task_idx = list_state.selected().unwrap_or(0);
-        let current_task = tasks[current_task_idx].clone();
+        let selected_filtered_pos = list_state.selected().unwrap_or(0);
+        let current_real_idx = filtered_indices.get(selected_filtered_pos).copied().unwrap_or(0);
+        let current_task = tasks[current_real_idx].clone();
 
         // Check if background fetch is needed
         let (has_detail, has_comments) = {
@@ -187,6 +202,20 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
         let detailed_task = cached_task_details.lock().unwrap().get(&current_task.id).cloned();
         let comments = cached_comments.lock().unwrap().get(&current_task.id).cloned();
 
+        let terminal_size = terminal.size()?;
+        let size = ratatui::layout::Rect::new(0, 0, terminal_size.width, terminal_size.height);
+        let main_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(2)].as_ref())
+            .split(size);
+
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+            .split(main_layout[0]);
+
+        let right_pane_width = (chunks[1].width as usize).saturating_sub(2);
+
         let mut detail_lines = Vec::new();
         let max_right_scroll;
         let right_title: String;
@@ -219,6 +248,16 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                     Span::styled(assignees, Style::default().fg(crate::ui::styles::COLOR_FG)),
                 ]));
 
+                let tags_display = if detailed_task.tags.is_empty() {
+                    "None".to_string()
+                } else {
+                    detailed_task.tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")
+                };
+                detail_lines.push(Line::from(vec![
+                    Span::styled("Tags:      ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                    Span::styled(tags_display, Style::default().fg(crate::ui::styles::COLOR_FG)),
+                ]));
+
                 detail_lines.push(Line::from(vec![
                     Span::styled("Creator:   ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
                     Span::styled(&detailed_task.creator.username, Style::default().fg(crate::ui::styles::COLOR_FG)),
@@ -233,10 +272,26 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                     Span::styled("───────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                 ]));
 
-                for line in desc_text.lines() {
-                    detail_lines.push(Line::from(vec![
-                        Span::styled(line, Style::default().fg(crate::ui::styles::COLOR_FG)),
-                    ]));
+                let wrapped_desc = crate::util::format::wrap_text_by_words(desc_text, right_pane_width);
+                for line in wrapped_desc {
+                    let segments = crate::util::format::parse_links(&line);
+                    let mut spans = Vec::new();
+                    for seg in segments {
+                        match seg {
+                            crate::util::format::TextSegment::Plain(t) => {
+                                spans.push(Span::styled(t, Style::default().fg(crate::ui::styles::COLOR_FG)));
+                            }
+                            crate::util::format::TextSegment::Link { url, text: _ } => {
+                                spans.push(Span::styled(
+                                    url,
+                                    Style::default()
+                                        .fg(ratatui::style::Color::Cyan)
+                                        .add_modifier(Modifier::UNDERLINED),
+                                ));
+                            }
+                        }
+                    }
+                    detail_lines.push(Line::from(spans));
                 }
 
                 detail_lines.push(Line::from(""));
@@ -259,10 +314,26 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             Span::styled(format!("{} ", c.user.username), Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_FG)),
                             Span::styled(format!("({})", dt), Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                         ]));
-                        for line in c.comment_text.lines() {
-                            detail_lines.push(Line::from(vec![
-                                Span::styled(format!("  {}", line), Style::default().fg(crate::ui::styles::COLOR_FG)),
-                            ]));
+                        let wrapped_comment = crate::util::format::wrap_text_by_words(&c.comment_text, right_pane_width.saturating_sub(2));
+                        for line in wrapped_comment {
+                            let segments = crate::util::format::parse_links(&line);
+                            let mut spans = vec![Span::styled("  ", Style::default().fg(crate::ui::styles::COLOR_FG))];
+                            for seg in segments {
+                                match seg {
+                                    crate::util::format::TextSegment::Plain(t) => {
+                                        spans.push(Span::styled(t, Style::default().fg(crate::ui::styles::COLOR_FG)));
+                                    }
+                                    crate::util::format::TextSegment::Link { url, text: _ } => {
+                                        spans.push(Span::styled(
+                                            url,
+                                            Style::default()
+                                                .fg(ratatui::style::Color::Cyan)
+                                                .add_modifier(Modifier::UNDERLINED),
+                                        ));
+                                    }
+                                }
+                            }
+                            detail_lines.push(Line::from(spans));
                         }
                         detail_lines.push(Line::from(""));
                     }
@@ -270,7 +341,6 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
 
                 // Calculate maximum vertical scroll
                 let total_detail_lines = detail_lines.len();
-                let size = terminal.size()?;
                 let main_layout_height = size.height.saturating_sub(2);
                 let right_pane_height = main_layout_height.saturating_sub(2) as usize;
                 max_right_scroll = total_detail_lines.saturating_sub(right_pane_height) as u16;
@@ -289,7 +359,6 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             .border_style(right_border_style),
                     )
                     .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
-                    .wrap(Wrap { trim: true })
                     .scroll((right_scroll, 0))
             }
             _ => {
@@ -321,6 +390,26 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
             }
         };
 
+        // Build dynamic left pane title
+        let shown = filtered_indices.len();
+        let total = tasks.len();
+        let count_part = if shown == total {
+            format!(" Tasks [{}] ", total)
+        } else {
+            format!(" Tasks [{}/{}] ", shown, total)
+        };
+        let keyword_suffix = if !filter_query.is_empty() {
+            format!("  /{}", filter_query)
+        } else {
+            String::new()
+        };
+        let tag_suffix = if !active_filter_tags.is_empty() {
+            format!("  {}", active_filter_tags.iter().map(|n| format!("#{}", n)).collect::<Vec<_>>().join(","))
+        } else {
+            String::new()
+        };
+        let left_pane_title = format!("{}{}{}", count_part, keyword_suffix, tag_suffix);
+
         // Render Frame
         terminal.draw(|f| {
             let size = f.area();
@@ -341,10 +430,39 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                 crate::ui::styles::style_border_inactive()
             };
 
+            // Split left pane vertically when the search bar is active
+            let (search_area_opt, task_list_area) = if state == BrowseState::FilterEditor {
+                let sub = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Min(0)].as_ref())
+                    .split(chunks[0]);
+                (Some(sub[0]), sub[1])
+            } else {
+                (None, chunks[0])
+            };
+
+            // Render search bar when active
+            if let Some(search_area) = search_area_opt {
+                let search_widget = Paragraph::new(format!(" {}", filter_query_buffer))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Filter (Enter: apply, Esc: clear) ")
+                            .border_style(crate::ui::styles::style_border_active()),
+                    )
+                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
+                f.render_widget(search_widget, search_area);
+                f.set_cursor_position(ratatui::layout::Position::new(
+                    search_area.x + 1 + filter_query_buffer.chars().count() as u16,
+                    search_area.y + 1,
+                ));
+            }
+
             // Left Pane: Tasks List
-            let items: Vec<ListItem> = tasks
+            let items: Vec<ListItem> = filtered_indices
                 .iter()
-                .map(|t| {
+                .map(|&real_idx| {
+                    let t = &tasks[real_idx];
                     let status_color = crate::ui::styles::get_status_color(&t.status.status);
                     let date_str = format_task_date(&t.date_updated);
                     let date_display = if date_str.is_empty() {
@@ -377,12 +495,12 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(" Tasks List ")
+                        .title(left_pane_title.clone())
                         .border_style(left_border_style),
                 )
                 .highlight_style(crate::ui::styles::style_selected());
 
-            f.render_stateful_widget(left_list, chunks[0], &mut list_state);
+            f.render_stateful_widget(left_list, task_list_area, &mut list_state);
 
             // Right Pane
             f.render_widget(right_pane_widget, chunks[1]);
@@ -395,10 +513,16 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                 Span::styled(" Add Comment |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" s", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Change Status |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" t", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Tags |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" n", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" New Task |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" r", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Reload |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" /", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Search |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" T", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Tag Filter |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" ↑/↓ (j/k)", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Scroll Focused Pane |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" q", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
@@ -438,8 +562,90 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                     .highlight_style(crate::ui::styles::style_selected());
 
                 f.render_stateful_widget(picker_list, popup_layout, &mut statuses_state);
+            } else if state == BrowseState::TagPicker {
+                let popup_layout = crate::ui::get_popup_layout(size, 50, 60);
+                f.render_widget(Clear, popup_layout);
+
+                let items: Vec<ListItem> = space_tags
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tag)| {
+                        let checked = if task_tag_selection.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                format!("  {} ", checked),
+                                Style::default().fg(crate::ui::styles::COLOR_MUTED),
+                            ),
+                            Span::styled(
+                                tag.name.clone(),
+                                if task_tag_selection.get(i).copied().unwrap_or(false) {
+                                    Style::default().fg(crate::ui::styles::COLOR_PRIMARY).add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default().fg(crate::ui::styles::COLOR_FG)
+                                },
+                            ),
+                        ]))
+                        .style(Style::default().bg(crate::ui::styles::COLOR_BG))
+                    })
+                    .collect();
+
+                let picker_list = RatatuiList::new(items)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Tags (Space: toggle, Enter: apply, Esc: cancel) ")
+                            .border_style(crate::ui::styles::style_border_active()),
+                    )
+                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    .highlight_style(crate::ui::styles::style_selected());
+
+                f.render_stateful_widget(picker_list, popup_layout, &mut tags_state);
+            } else if state == BrowseState::FilterTagPicker {
+                let popup_layout = crate::ui::get_popup_layout(size, 50, 60);
+                f.render_widget(Clear, popup_layout);
+
+                let items: Vec<ListItem> = space_tags
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tag)| {
+                        let checked = if filter_tag_selection.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                format!("  {} ", checked),
+                                Style::default().fg(crate::ui::styles::COLOR_MUTED),
+                            ),
+                            Span::styled(
+                                tag.name.clone(),
+                                if filter_tag_selection.get(i).copied().unwrap_or(false) {
+                                    Style::default().fg(crate::ui::styles::COLOR_PRIMARY).add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default().fg(crate::ui::styles::COLOR_FG)
+                                },
+                            ),
+                        ]))
+                        .style(Style::default().bg(crate::ui::styles::COLOR_BG))
+                    })
+                    .collect();
+
+                let picker_list = RatatuiList::new(items)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Filter by Tag (Space: toggle, Enter: apply, Esc: cancel) ")
+                            .border_style(crate::ui::styles::style_border_active()),
+                    )
+                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    .highlight_style(crate::ui::styles::style_selected());
+
+                f.render_stateful_widget(picker_list, popup_layout, &mut filter_tags_state);
             }
         })?;
+
+        // Snapshot task_id -> tag names from the detail cache for use in filtering
+        let detail_tags_snapshot: std::collections::HashMap<String, Vec<String>> = {
+            let details = cached_task_details.lock().unwrap();
+            details.iter().map(|(id, t)| (id.clone(), t.tags.iter().map(|tag| tag.name.clone()).collect())).collect()
+        };
 
         // Handle events
         if event::poll(std::time::Duration::from_millis(100))? {
@@ -454,8 +660,8 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             KeyCode::Up | KeyCode::Char('k') => {
                                 match active_pane {
                                     ActivePane::Left => {
-                                        if current_task_idx > 0 {
-                                            list_state.select(Some(current_task_idx - 1));
+                                        if selected_filtered_pos > 0 {
+                                            list_state.select(Some(selected_filtered_pos - 1));
                                             right_scroll = 0;
                                         }
                                     }
@@ -469,8 +675,8 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             KeyCode::Down | KeyCode::Char('j') => {
                                 match active_pane {
                                     ActivePane::Left => {
-                                        if current_task_idx + 1 < tasks.len() {
-                                            list_state.select(Some(current_task_idx + 1));
+                                        if selected_filtered_pos + 1 < filtered_indices.len() {
+                                            list_state.select(Some(selected_filtered_pos + 1));
                                             right_scroll = 0;
                                         }
                                     }
@@ -535,6 +741,23 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                                 loading_tasks.remove(&current_task.id);
                                 api.invalidate_task(&current_task.id).await;
                             }
+                            KeyCode::Char('t') => {
+                                if space_tags.is_empty() {
+                                    let cfg = Config::load()?;
+                                    space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                                }
+                                let current_task_tags: Vec<String> = {
+                                    let details = cached_task_details.lock().unwrap();
+                                    details.get(&current_task.id)
+                                        .map(|t| t.tags.iter().map(|tag| tag.name.clone()).collect())
+                                        .unwrap_or_default()
+                                };
+                                task_tag_selection = space_tags.iter()
+                                    .map(|tag| current_task_tags.contains(&tag.name))
+                                    .collect();
+                                tags_state.select(Some(0));
+                                state = BrowseState::TagPicker;
+                            }
                             KeyCode::Char('n') => {
                                 crossterm::execute!(io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
                                 crossterm::terminal::disable_raw_mode()?;
@@ -546,6 +769,21 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                                 terminal.clear()?;
 
                                 continue 'reload;
+                            }
+                            KeyCode::Char('/') => {
+                                filter_query_buffer = filter_query.clone();
+                                state = BrowseState::FilterEditor;
+                            }
+                            KeyCode::Char('T') => {
+                                if space_tags.is_empty() {
+                                    let cfg = Config::load()?;
+                                    space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                                }
+                                filter_tag_selection = space_tags.iter()
+                                    .map(|tag| active_filter_tags.contains(&tag.name))
+                                    .collect();
+                                filter_tags_state.select(Some(0));
+                                state = BrowseState::FilterTagPicker;
                             }
                             _ => {}
                         },
@@ -634,6 +872,150 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             }
                             _ => {}
                         },
+                        BrowseState::TagPicker => match key.code {
+                            KeyCode::Esc => {
+                                state = BrowseState::List;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let i = tags_state.selected().unwrap_or(0);
+                                if i > 0 {
+                                    tags_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                let i = tags_state.selected().unwrap_or(0);
+                                if i + 1 < space_tags.len() {
+                                    tags_state.select(Some(i + 1));
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some(idx) = tags_state.selected() {
+                                    if let Some(sel) = task_tag_selection.get_mut(idx) {
+                                        *sel = !*sel;
+                                    }
+                                }
+                            }
+                            KeyCode::Enter => {
+                                let task_id = current_task.id.clone();
+                                let current_task_tags: Vec<String> = {
+                                    let details = cached_task_details.lock().unwrap();
+                                    details.get(&task_id)
+                                        .map(|t| t.tags.iter().map(|tag| tag.name.clone()).collect())
+                                        .unwrap_or_default()
+                                };
+
+                                terminal.draw(|f| {
+                                    crate::ui::styles::render_background(f);
+                                    f.render_widget(
+                                        Paragraph::new("Updating tags...").block(
+                                            Block::default().borders(Borders::ALL).title(" Please Wait "),
+                                        ),
+                                        f.area(),
+                                    );
+                                })?;
+
+                                let mut any_err = false;
+                                for (i, tag) in space_tags.iter().enumerate() {
+                                    let wanted = task_tag_selection.get(i).copied().unwrap_or(false);
+                                    let had = current_task_tags.contains(&tag.name);
+                                    if wanted && !had {
+                                        if api.add_tag_to_task(&task_id, &tag.name).await.is_err() {
+                                            any_err = true;
+                                        }
+                                    } else if !wanted && had {
+                                        if api.remove_tag_from_task(&task_id, &tag.name).await.is_err() {
+                                            any_err = true;
+                                        }
+                                    }
+                                }
+
+                                if !any_err {
+                                    cached_task_details.lock().unwrap().remove(&task_id);
+                                    loading_tasks.remove(&task_id);
+                                    api.invalidate_task(&task_id).await;
+                                }
+                                state = BrowseState::List;
+                            }
+                            _ => {}
+                        },
+                        BrowseState::FilterEditor => match key.code {
+                            KeyCode::Esc => {
+                                filter_query_buffer.clear();
+                                filter_query.clear();
+                                filtered_indices = compute_filtered_indices(&tasks, "", &active_filter_tags, &detail_tags_snapshot);
+                                if filtered_indices.is_empty() {
+                                    list_state.select(None);
+                                } else {
+                                    list_state.select(Some(0));
+                                    right_scroll = 0;
+                                }
+                                state = BrowseState::List;
+                            }
+                            KeyCode::Enter => {
+                                filter_query = filter_query_buffer.clone();
+                                state = BrowseState::List;
+                            }
+                            KeyCode::Char(c) => {
+                                filter_query_buffer.push(c);
+                                filtered_indices = compute_filtered_indices(&tasks, &filter_query_buffer, &active_filter_tags, &detail_tags_snapshot);
+                                if filtered_indices.is_empty() {
+                                    list_state.select(None);
+                                } else {
+                                    list_state.select(Some(0));
+                                    right_scroll = 0;
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                filter_query_buffer.pop();
+                                filtered_indices = compute_filtered_indices(&tasks, &filter_query_buffer, &active_filter_tags, &detail_tags_snapshot);
+                                if filtered_indices.is_empty() {
+                                    list_state.select(None);
+                                } else {
+                                    list_state.select(Some(0));
+                                    right_scroll = 0;
+                                }
+                            }
+                            _ => {}
+                        },
+                        BrowseState::FilterTagPicker => match key.code {
+                            KeyCode::Esc => {
+                                state = BrowseState::List;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let i = filter_tags_state.selected().unwrap_or(0);
+                                if i > 0 {
+                                    filter_tags_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                let i = filter_tags_state.selected().unwrap_or(0);
+                                if i + 1 < space_tags.len() {
+                                    filter_tags_state.select(Some(i + 1));
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some(idx) = filter_tags_state.selected() {
+                                    if let Some(sel) = filter_tag_selection.get_mut(idx) {
+                                        *sel = !*sel;
+                                    }
+                                }
+                            }
+                            KeyCode::Enter => {
+                                active_filter_tags = space_tags.iter().enumerate()
+                                    .filter(|(i, _)| filter_tag_selection.get(*i).copied().unwrap_or(false))
+                                    .map(|(_, tag)| tag.name.clone())
+                                    .collect();
+                                filtered_indices = compute_filtered_indices(&tasks, &filter_query, &active_filter_tags, &detail_tags_snapshot);
+                                if filtered_indices.is_empty() {
+                                    list_state.select(None);
+                                } else {
+                                    list_state.select(Some(0));
+                                    right_scroll = 0;
+                                }
+                                state = BrowseState::List;
+                            }
+                            _ => {}
+                        },
                     }
                 }
             }
@@ -643,6 +1025,28 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
     } // 'reload
 
     Ok(())
+}
+
+fn compute_filtered_indices(
+    tasks: &[Task],
+    query: &str,
+    active_tags: &[String],
+    detail_tags: &std::collections::HashMap<String, Vec<String>>,
+) -> Vec<usize> {
+    tasks.iter().enumerate().filter_map(|(i, t)| {
+        let keyword_match = query.is_empty() || t.name.to_lowercase().contains(&query.to_lowercase());
+        let tag_match = if active_tags.is_empty() {
+            true
+        } else {
+            // prefer detail cache tags (more complete); fall back to list-endpoint tags
+            if let Some(cached) = detail_tags.get(&t.id) {
+                cached.iter().any(|name| active_tags.contains(name))
+            } else {
+                t.tags.iter().any(|tag| active_tags.contains(&tag.name))
+            }
+        };
+        if keyword_match && tag_match { Some(i) } else { None }
+    }).collect()
 }
 
 fn draw_loader(

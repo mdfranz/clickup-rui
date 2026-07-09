@@ -55,6 +55,11 @@ pub struct TaskStatus {
     pub type_: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Tag {
+    pub name: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -70,6 +75,8 @@ pub struct Task {
     pub date_done: Option<String>,
     pub date_closed: Option<String>,
     pub text_content: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<Tag>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

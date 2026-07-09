@@ -1,12 +1,12 @@
 use crate::clickup::api::ClickUpApi;
-use crate::clickup::models::{Folder, List as ClickUpList, Status, User};
+use crate::clickup::models::{Folder, List as ClickUpList, Status, Tag, User};
 use crate::config::Config;
 use crate::util::errors::{AppError, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::Style;
-use ratatui::text::Line;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
 use ratatui::Terminal;
 use std::io;
@@ -20,6 +20,7 @@ enum NewTaskStep {
     DescriptionInput,
     AssigneePrompt,
     AssigneeSelect,
+    TagSelect,
     Confirm,
     Creating,
     Done,
@@ -72,6 +73,10 @@ async fn run_new_task_loop<A: ClickUpApi>(
     let mut workspace_users: Vec<User> = Vec::new();
     let mut users_state = ListState::default();
 
+    let mut space_tags: Vec<Tag> = Vec::new();
+    let mut tags_state = ListState::default();
+    let mut selected_tags: Vec<String> = Vec::new();
+
     let mut selected_folder: Option<Folder> = None;
     let mut selected_list: Option<ClickUpList> = None;
     let mut selected_status: Option<Status> = None;
@@ -118,14 +123,15 @@ async fn run_new_task_loop<A: ClickUpApi>(
                 .split(size);
 
             let header_text = match step {
-                NewTaskStep::FolderSelect => "Create Task: Step 1/7 - Select Folder",
-                NewTaskStep::ListSelect => "Create Task: Step 2/7 - Select List",
-                NewTaskStep::StatusSelect => "Create Task: Step 3/7 - Select Status",
-                NewTaskStep::NameInput => "Create Task: Step 4/7 - Type Task Name",
-                NewTaskStep::DescriptionInput => "Create Task: Step 5/7 - Type Description",
-                NewTaskStep::AssigneePrompt => "Create Task: Step 6/7 - Assign to Yourself?",
-                NewTaskStep::AssigneeSelect => "Create Task: Step 6/7 - Select Assignee",
-                NewTaskStep::Confirm => "Create Task: Step 7/7 - Confirm Details",
+                NewTaskStep::FolderSelect => "Create Task: Step 1/8 - Select Folder",
+                NewTaskStep::ListSelect => "Create Task: Step 2/8 - Select List",
+                NewTaskStep::StatusSelect => "Create Task: Step 3/8 - Select Status",
+                NewTaskStep::NameInput => "Create Task: Step 4/8 - Type Task Name",
+                NewTaskStep::DescriptionInput => "Create Task: Step 5/8 - Type Description",
+                NewTaskStep::AssigneePrompt => "Create Task: Step 6/8 - Assign to Yourself?",
+                NewTaskStep::AssigneeSelect => "Create Task: Step 6/8 - Select Assignee",
+                NewTaskStep::TagSelect => "Create Task: Step 7/8 - Select Tags",
+                NewTaskStep::Confirm => "Create Task: Step 8/8 - Confirm Details",
                 NewTaskStep::Creating => "Creating Task...",
                 NewTaskStep::Done => "Task Successfully Created!",
             };
@@ -304,11 +310,48 @@ async fn run_new_task_loop<A: ClickUpApi>(
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, assignee_chunks[1], &mut users_state);
                 }
+                NewTaskStep::TagSelect => {
+                    let items: Vec<ListItem> = space_tags
+                        .iter()
+                        .map(|tag| {
+                            let checked = if selected_tags.contains(&tag.name) { "[x]" } else { "[ ]" };
+                            ListItem::new(Line::from(vec![
+                                Span::styled(
+                                    format!("  {} ", checked),
+                                    Style::default().fg(crate::ui::styles::COLOR_MUTED),
+                                ),
+                                Span::styled(
+                                    tag.name.clone(),
+                                    if selected_tags.contains(&tag.name) {
+                                        Style::default().fg(crate::ui::styles::COLOR_PRIMARY).add_modifier(Modifier::BOLD)
+                                    } else {
+                                        Style::default().fg(crate::ui::styles::COLOR_FG)
+                                    },
+                                ),
+                            ]))
+                        })
+                        .collect();
+                    let list_title = if selected_tags.is_empty() {
+                        " Tags (none selected) ".to_string()
+                    } else {
+                        format!(" Tags ({} selected) ", selected_tags.len())
+                    };
+                    let list = RatatuiList::new(items)
+                        .block(Block::default().borders(Borders::ALL).title(list_title))
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                        .highlight_style(crate::ui::styles::style_selected());
+                    f.render_stateful_widget(list, chunks[1], &mut tags_state);
+                }
                 NewTaskStep::Confirm => {
                     let f_name = selected_folder.as_ref().map(|f| f.name.as_str()).unwrap_or("");
                     let l_name = selected_list.as_ref().map(|l| l.name.as_str()).unwrap_or("");
                     let s_name = selected_status.as_ref().map(|s| s.status.as_str()).unwrap_or("");
                     let a_name = assignee_choice.as_ref().map(|u| u.username.as_str()).unwrap_or("Unassigned");
+                    let tags_display = if selected_tags.is_empty() {
+                        "None".to_string()
+                    } else {
+                        selected_tags.join(", ")
+                    };
 
                     let summary_text = format!(
                         "Folder: {}\n\
@@ -316,9 +359,10 @@ async fn run_new_task_loop<A: ClickUpApi>(
                          Status: {}\n\
                          Name: {}\n\
                          Description: {}\n\
-                         Assignee: {}\n\n\
-                         Ready to create? [Press Enter to Confirm / 'n' edit name / 'd' edit description / 'a' edit assignee]",
-                        f_name, l_name, s_name, name, description, a_name
+                         Assignee: {}\n\
+                         Tags: {}\n\n\
+                         Ready to create? [Press Enter to Confirm / 'n' edit name / 'd' edit description / 'a' edit assignee / 't' edit tags]",
+                        f_name, l_name, s_name, name, description, a_name, tags_display
                     );
                     let p = Paragraph::new(summary_text)
                         .block(
@@ -361,11 +405,14 @@ async fn run_new_task_loop<A: ClickUpApi>(
                 NewTaskStep::AssigneeSelect => {
                     "Arrow Up/Down: navigate | Type to filter | Enter: confirm selection | Esc: cancel"
                 }
+                NewTaskStep::TagSelect => {
+                    "Arrow Up/Down or j/k: navigate | Space: toggle tag | Enter: confirm | Esc: cancel"
+                }
                 NewTaskStep::NameInput | NewTaskStep::DescriptionInput => {
                     "Type normally | Enter: submit value | Esc: cancel"
                 }
                 NewTaskStep::AssigneePrompt => "Press 'y' or 'n' | Esc: cancel",
-                NewTaskStep::Confirm => "Enter: Create Task | n/d/a: edit | Esc: cancel",
+                NewTaskStep::Confirm => "Enter: Create Task | n/d/a/t: edit | Esc: cancel",
                 NewTaskStep::Creating => "Processing...",
                 NewTaskStep::Done => "y/s/n/q: choose action",
             };
@@ -510,7 +557,12 @@ async fn run_new_task_loop<A: ClickUpApi>(
                         NewTaskStep::AssigneePrompt => match key.code {
                             KeyCode::Char('y') | KeyCode::Char('Y') => {
                                 assignee_choice = Some(current_user.clone());
-                                step = NewTaskStep::Confirm;
+                                if space_tags.is_empty() {
+                                    let cfg = Config::load()?;
+                                    space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                                }
+                                tags_state.select(Some(0));
+                                step = NewTaskStep::TagSelect;
                             }
                             KeyCode::Char('n') | KeyCode::Char('N') => {
                                 if workspace_users.is_empty() {
@@ -556,6 +608,41 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 } else if idx <= filtered_users.len() {
                                     assignee_choice = Some((*filtered_users[idx - 1]).clone());
                                 }
+                                if space_tags.is_empty() {
+                                    let cfg = Config::load()?;
+                                    space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                                }
+                                tags_state.select(Some(0));
+                                step = NewTaskStep::TagSelect;
+                            }
+                            _ => {}
+                        },
+                        NewTaskStep::TagSelect => match key.code {
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let i = tags_state.selected().unwrap_or(0);
+                                if i > 0 {
+                                    tags_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                let i = tags_state.selected().unwrap_or(0);
+                                if i + 1 < space_tags.len() {
+                                    tags_state.select(Some(i + 1));
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some(idx) = tags_state.selected() {
+                                    if let Some(tag) = space_tags.get(idx) {
+                                        let name = tag.name.clone();
+                                        if let Some(pos) = selected_tags.iter().position(|t| t == &name) {
+                                            selected_tags.remove(pos);
+                                        } else {
+                                            selected_tags.push(name);
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Enter => {
                                 step = NewTaskStep::Confirm;
                             }
                             _ => {}
@@ -587,6 +674,12 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                     Some(description.as_str())
                                 };
 
+                                let tags_opt: Option<Vec<String>> = if selected_tags.is_empty() {
+                                    None
+                                } else {
+                                    Some(selected_tags.clone())
+                                };
+
                                 let create_res = api
                                     .create_task(
                                         list_id,
@@ -594,6 +687,7 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                         desc_opt,
                                         status_name,
                                         assignees.as_deref(),
+                                        tags_opt.as_deref(),
                                     )
                                     .await;
 
@@ -615,6 +709,9 @@ async fn run_new_task_loop<A: ClickUpApi>(
                             KeyCode::Char('a') => {
                                 step = NewTaskStep::AssigneePrompt;
                             }
+                            KeyCode::Char('t') => {
+                                step = NewTaskStep::TagSelect;
+                            }
                             _ => {}
                         },
                         NewTaskStep::Creating => {}
@@ -622,11 +719,13 @@ async fn run_new_task_loop<A: ClickUpApi>(
                             KeyCode::Char('y') | KeyCode::Char('Y') => {
                                 name.clear();
                                 description.clear();
+                                selected_tags.clear();
                                 step = NewTaskStep::StatusSelect;
                             }
                             KeyCode::Char('s') | KeyCode::Char('S') => {
                                 name.clear();
                                 description.clear();
+                                selected_tags.clear();
                                 step = NewTaskStep::FolderSelect;
                             }
                             _ => return Ok(()),

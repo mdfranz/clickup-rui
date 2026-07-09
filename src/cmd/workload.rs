@@ -410,9 +410,9 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(35),
-                    Constraint::Percentage(40),
+                    Constraint::Percentage(17),
+                    Constraint::Percentage(38),
+                    Constraint::Percentage(45),
                 ].as_ref())
                 .split(main_layout[0]);
 
@@ -565,8 +565,10 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         Block::default()
                             .borders(Borders::ALL)
                             .title(" Filter by Status (Space toggle, Esc/Enter close) ")
-                            .border_style(crate::ui::styles::style_border_active()),
+                            .border_style(crate::ui::styles::style_border_active())
+                            .style(Style::default().bg(crate::ui::styles::COLOR_BG)),
                     )
+                    .style(Style::default().bg(crate::ui::styles::COLOR_BG))
                     .highlight_style(crate::ui::styles::style_selected());
 
                 f.render_stateful_widget(picker, popup_layout, &mut filter_picker_state);

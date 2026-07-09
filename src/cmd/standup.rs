@@ -1,5 +1,5 @@
 use crate::clickup::api::ClickUpApi;
-use crate::clickup::models::{Status, Task};
+use crate::clickup::models::{Status, Task, Comment};
 use crate::config::Config;
 use crate::util::errors::Result;
 use crate::util::filter::should_include_task;
@@ -29,6 +29,7 @@ struct StandupReport {
     skipped: bool,
     posted_comment: bool,
     posted_status: bool,
+    comments: Vec<Comment>,
 }
 
 pub async fn run_standup<A: ClickUpApi>(api: &A, all_flag: bool, mine_only: bool) -> Result<()> {
@@ -176,10 +177,15 @@ async fn run_standup_loop<A: ClickUpApi>(
                         current_status_name
                     );
 
+                    let report_chunks = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
+                        .split(chunks[1]);
+
                     let main_layout = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([Constraint::Length(6), Constraint::Min(3)].as_ref())
-                        .split(chunks[1]);
+                        .split(report_chunks[0]);
 
                     f.render_widget(
                         Paragraph::new(info_text)
@@ -205,6 +211,58 @@ async fn run_standup_loop<A: ClickUpApi>(
                         )
                         .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
                     f.render_widget(p_comment, main_layout[1]);
+
+                    // Render recent comments on the right pane
+                    let right_width = (report_chunks[1].width as usize).saturating_sub(6);
+                    let mut comment_lines = Vec::new();
+                    if rep.comments.is_empty() {
+                        comment_lines.push(Line::from(vec![
+                            ratatui::text::Span::styled(
+                                "No recent comments.",
+                                Style::default().fg(crate::ui::styles::COLOR_MUTED),
+                            ),
+                        ]));
+                    } else {
+                        let comments_to_show = &rep.comments[0..rep.comments.len().min(3)];
+                        for (i, c) in comments_to_show.iter().enumerate() {
+                            if i > 0 {
+                                comment_lines.push(Line::from(""));
+                            }
+                            let dt = crate::util::format::format_comment_date(&c.date);
+                            comment_lines.push(Line::from(vec![
+                                ratatui::text::Span::styled(
+                                    format!("{} ", c.user.username),
+                                    Style::default()
+                                        .add_modifier(ratatui::style::Modifier::BOLD)
+                                        .fg(crate::ui::styles::COLOR_FG),
+                                ),
+                                ratatui::text::Span::styled(
+                                    format!("({})", dt),
+                                    Style::default().fg(crate::ui::styles::COLOR_MUTED),
+                                ),
+                            ]));
+                            let wrapped = crate::util::format::wrap_text_by_words(&c.comment_text, right_width);
+                            for line in wrapped {
+                                comment_lines.push(Line::from(vec![
+                                    ratatui::text::Span::styled(
+                                        format!("  {}", line),
+                                        Style::default().fg(crate::ui::styles::COLOR_FG),
+                                    ),
+                                ]));
+                            }
+                        }
+                    }
+
+                    let p_recent_comments = Paragraph::new(comment_lines)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .border_style(crate::ui::styles::style_border_inactive())
+                                .title(" Recent Comments (Last 3) ")
+                                .padding(Padding::new(2, 2, 1, 1)),
+                        )
+                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG));
+                    f.render_widget(p_recent_comments, report_chunks[1]);
 
                     // Dynamic cursor placement tracking current length and wrapped lines
                     let cursor_row = wrapped_lines.len().saturating_sub(1) as u16;
@@ -330,10 +388,35 @@ async fn run_standup_loop<A: ClickUpApi>(
                                 if selected_task_ids.is_empty() {
                                     return Ok(());
                                 }
-                                reports = tasks
+                                terminal.draw(|f| {
+                                    crate::ui::styles::render_background(f);
+                                    f.render_widget(
+                                        Paragraph::new("Loading task comments for context...").block(
+                                            Block::default().borders(Borders::ALL).title(" Please Wait "),
+                                        ),
+                                        f.area(),
+                                    );
+                                })?;
+
+                                let selected_tasks: Vec<Task> = tasks
                                     .iter()
                                     .filter(|t| selected_task_ids.contains(&t.id))
-                                    .map(|t| StandupReport {
+                                    .cloned()
+                                    .collect();
+
+                                let mut loaded_reports = Vec::new();
+                                for t in selected_tasks {
+                                    let comments = match api.get_task_comments(&t.id).await {
+                                        Ok(mut c) => {
+                                            crate::util::sort::sort_comments_by_date_desc(&mut c);
+                                            c
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to fetch task comments for {}: {:?}", t.id, e);
+                                            Vec::new()
+                                        }
+                                    };
+                                    loaded_reports.push(StandupReport {
                                         task: t.clone(),
                                         comment: String::new(),
                                         new_status: None,
@@ -341,8 +424,10 @@ async fn run_standup_loop<A: ClickUpApi>(
                                         skipped: false,
                                         posted_comment: false,
                                         posted_status: false,
-                                    })
-                                    .collect();
+                                        comments,
+                                    });
+                                }
+                                reports = loaded_reports;
                                 current_report_idx = 0;
                                 step = StandupStep::TaskReport;
                             }

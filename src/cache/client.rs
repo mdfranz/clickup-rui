@@ -469,10 +469,11 @@ impl<A: ClickUpApi> ClickUpApi for CachedClient<A> {
         description: Option<&str>,
         status: Option<&str>,
         assignees: Option<&[i64]>,
+        tags: Option<&[String]>,
     ) -> Result<Task> {
         let task = self
             .api
-            .create_task(list_id, name, description, status, assignees)
+            .create_task(list_id, name, description, status, assignees, tags)
             .await?;
 
         let mut store = self.store.lock().await;
@@ -481,6 +482,22 @@ impl<A: ClickUpApi> ClickUpApi for CachedClient<A> {
         store.mark_dirty();
 
         Ok(task)
+    }
+
+    async fn get_space_tags(&self, space_id: &str) -> Result<Vec<Tag>> {
+        self.api.get_space_tags(space_id).await
+    }
+
+    async fn add_tag_to_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
+        let result = self.api.add_tag_to_task(task_id, tag_name).await?;
+        self.api.invalidate_task(task_id).await;
+        Ok(result)
+    }
+
+    async fn remove_tag_from_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
+        let result = self.api.remove_tag_from_task(task_id, tag_name).await?;
+        self.api.invalidate_task(task_id).await;
+        Ok(result)
     }
 
     async fn invalidate_task(&self, task_id: &str) {
@@ -544,7 +561,11 @@ mod tests {
             _description: Option<&str>,
             _status: Option<&str>,
             _assignees: Option<&[i64]>,
+            _tags: Option<&[String]>,
         ) -> Result<Task> { unimplemented!() }
+        async fn get_space_tags(&self, _space_id: &str) -> Result<Vec<Tag>> { unimplemented!() }
+        async fn add_tag_to_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { unimplemented!() }
+        async fn remove_tag_from_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { unimplemented!() }
     }
 
     fn make_test_task(id: &str, name: &str, date_updated: &str, status: &str) -> Task {
@@ -569,6 +590,7 @@ mod tests {
             date_done: None,
             date_closed: None,
             text_content: None,
+            tags: vec![],
         }
     }
 

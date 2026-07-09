@@ -18,8 +18,7 @@ impl TerminalGuard {
         let mut stdout = io::stdout();
         crossterm::execute!(
             stdout,
-            crossterm::terminal::EnterAlternateScreen,
-            crossterm::event::EnableMouseCapture
+            crossterm::terminal::EnterAlternateScreen
         )?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
@@ -38,8 +37,7 @@ impl Drop for TerminalGuard {
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = crossterm::execute!(
             self.terminal.backend_mut(),
-            crossterm::terminal::LeaveAlternateScreen,
-            crossterm::event::DisableMouseCapture
+            crossterm::terminal::LeaveAlternateScreen
         );
         let _ = self.terminal.show_cursor();
     }

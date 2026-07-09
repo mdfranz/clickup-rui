@@ -23,7 +23,7 @@ pub fn style_title() -> Style {
 pub fn style_selected() -> Style {
     Style::default()
         .bg(COLOR_PRIMARY)
-        .fg(Color::Black)
+        .fg(COLOR_FG)
         .add_modifier(Modifier::BOLD)
 }
 

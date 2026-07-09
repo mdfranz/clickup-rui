@@ -146,6 +146,8 @@ struct ListsResponse {
 #[derive(Deserialize)]
 struct TasksResponse {
     tasks: Vec<Task>,
+    #[serde(default)]
+    last_page: bool,
 }
 
 #[derive(Deserialize)]
@@ -172,6 +174,13 @@ struct CreateTaskRequest<'a> {
     status: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     assignees: Option<&'a [i64]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<&'a [String]>,
+}
+
+#[derive(Deserialize)]
+struct SpaceTagsResponse {
+    tags: Vec<Tag>,
 }
 
 impl ClickUpApi for ClickUpClient {
@@ -209,21 +218,39 @@ impl ClickUpApi for ClickUpClient {
     }
 
     async fn get_tasks(&self, list_id: &str, include_closed: bool) -> Result<Vec<Task>> {
-        let path = format!(
-            "/list/{}/task?archived=false&include_closed={}&subtasks=true",
-            list_id, include_closed
-        );
-        let resp: TasksResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
-        Ok(resp.tasks)
+        let mut all_tasks = Vec::new();
+        let mut page = 0u32;
+        loop {
+            let path = format!(
+                "/list/{}/task?archived=false&include_closed={}&subtasks=true&page={}",
+                list_id, include_closed, page
+            );
+            let resp: TasksResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+            all_tasks.extend(resp.tasks);
+            if resp.last_page {
+                break;
+            }
+            page += 1;
+        }
+        Ok(all_tasks)
     }
 
     async fn get_tasks_incremental(&self, list_id: &str, date_updated_gt: i64) -> Result<Vec<Task>> {
-        let path = format!(
-            "/list/{}/task?archived=false&include_closed=true&subtasks=true&date_updated_gt={}",
-            list_id, date_updated_gt
-        );
-        let resp: TasksResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
-        Ok(resp.tasks)
+        let mut all_tasks = Vec::new();
+        let mut page = 0u32;
+        loop {
+            let path = format!(
+                "/list/{}/task?archived=false&include_closed=true&subtasks=true&date_updated_gt={}&page={}",
+                list_id, date_updated_gt, page
+            );
+            let resp: TasksResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+            all_tasks.extend(resp.tasks);
+            if resp.last_page {
+                break;
+            }
+            page += 1;
+        }
+        Ok(all_tasks)
     }
 
     async fn get_task_detail(&self, task_id: &str) -> Result<Task> {
@@ -256,6 +283,7 @@ impl ClickUpApi for ClickUpClient {
         description: Option<&str>,
         status: Option<&str>,
         assignees: Option<&[i64]>,
+        tags: Option<&[String]>,
     ) -> Result<Task> {
         let path = format!("/list/{}/task", list_id);
         let body = CreateTaskRequest {
@@ -263,8 +291,27 @@ impl ClickUpApi for ClickUpClient {
             description,
             status,
             assignees,
+            tags,
         };
         self.request(reqwest::Method::POST, &path, Some(&body)).await
+    }
+
+    async fn get_space_tags(&self, space_id: &str) -> Result<Vec<Tag>> {
+        let path = format!("/space/{}/tag", space_id);
+        let resp: SpaceTagsResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+        Ok(resp.tags)
+    }
+
+    async fn add_tag_to_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
+        let path = format!("/task/{}/tag/{}", task_id, tag_name);
+        self.request::<(), serde_json::Value>(reqwest::Method::POST, &path, None::<&()>).await?;
+        Ok(())
+    }
+
+    async fn remove_tag_from_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
+        let path = format!("/task/{}/tag/{}", task_id, tag_name);
+        self.request::<(), serde_json::Value>(reqwest::Method::DELETE, &path, None::<&()>).await?;
+        Ok(())
     }
 }
 
