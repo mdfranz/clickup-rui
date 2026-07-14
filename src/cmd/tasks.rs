@@ -185,7 +185,7 @@ async fn render_task_node<A: ClickUpApi>(
         .iter()
         .map(|u| {
             if show_id {
-                format!("{} ({}/{})", u.username, u.id, u.email)
+                format!("{} ({}/{})", u.username, u.id, u.email.as_deref().unwrap_or("N/A"))
             } else {
                 u.username.clone()
             }

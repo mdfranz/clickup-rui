@@ -91,7 +91,7 @@ async fn run_new_task_loop<A: ClickUpApi>(
                         true
                     } else {
                         u.username.to_lowercase().contains(&assignee_filter.to_lowercase())
-                            || u.email.to_lowercase().contains(&assignee_filter.to_lowercase())
+                            || u.email.as_deref().unwrap_or("").to_lowercase().contains(&assignee_filter.to_lowercase())
                     }
                 })
                 .collect()
@@ -299,7 +299,7 @@ async fn run_new_task_loop<A: ClickUpApi>(
                     ];
                     for u in &filtered_users {
                         items.push(
-                            ListItem::new(format!("  {} ({})", u.username, u.email))
+                            ListItem::new(format!("  {} ({})", u.username, u.email.as_deref().unwrap_or("N/A")))
                                 .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                         );
                     }

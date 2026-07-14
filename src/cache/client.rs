@@ -572,7 +572,7 @@ mod tests {
         let user = User {
             id: 123,
             username: "test_user".to_string(),
-            email: "test@example.com".to_string(),
+            email: Some("test@example.com".to_string()),
         };
         Task {
             id: id.to_string(),

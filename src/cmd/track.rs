@@ -46,7 +46,7 @@ pub async fn run_track<A: ClickUpApi>(
             .unwrap_or_else(|| User {
                 id,
                 username: format!("User #{}", id),
-                email: String::new(),
+                email: None,
             })
     } else {
         if users.is_empty() {

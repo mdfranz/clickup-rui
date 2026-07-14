@@ -30,7 +30,7 @@ pub async fn run_show<A: ClickUpApi>(api: &A) -> Result<()> {
             println!("\nAuthenticated ClickUp User:");
             println!("  Name: {}", user.username);
             println!("  ID: {}", user.id);
-            println!("  Email: {}", user.email);
+            println!("  Email: {}", user.email.as_deref().unwrap_or("N/A"));
         }
     }
 

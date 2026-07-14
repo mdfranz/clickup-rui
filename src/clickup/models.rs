@@ -3,8 +3,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct User {
     pub id: i64,
+    #[serde(deserialize_with = "deserialize_nullable_string", default)]
     pub username: String,
-    pub email: String,
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,8 +36,9 @@ pub struct Folder {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Status {
     pub status: String,
+    #[serde(deserialize_with = "deserialize_nullable_string", default)]
     pub color: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", deserialize_with = "deserialize_nullable_string", default)]
     pub type_: String,
 }
 
@@ -82,8 +85,10 @@ pub struct Task {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Comment {
     pub id: String,
+    #[serde(deserialize_with = "deserialize_nullable_string", default)]
     pub comment_text: String,
     pub user: User,
+    #[serde(deserialize_with = "deserialize_nullable_string", default)]
     pub date: String, // Unix ms string
 }
 
@@ -123,4 +128,12 @@ where
         Some(ParentValue::Object { id }) => Ok(Some(id)),
         Some(ParentValue::Null) | None => Ok(None),
     }
+}
+
+fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
 }
