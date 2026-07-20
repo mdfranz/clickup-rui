@@ -31,6 +31,7 @@ pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
                 raw: false,
                 csv: false,
                 json: false,
+                markdown: false,
             },
         ),
         ("Create New Task", Commands::New),

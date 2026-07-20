@@ -26,8 +26,8 @@ enum BrowseState {
 
 #[derive(PartialEq, Eq)]
 enum ActivePane {
-    Left,
-    Right,
+    Top,
+    Bottom,
 }
 
 pub async fn run_browse<A: ClickUpApi + Clone + 'static>(api: &A, all_flag: bool, mine_only: bool) -> Result<()> {
@@ -124,7 +124,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
     list_state.select(Some(0));
 
     let mut state = BrowseState::List;
-    let mut active_pane = ActivePane::Left;
+    let mut active_pane = ActivePane::Top;
     let mut right_scroll: u16 = 0;
 
     let cached_comments = std::sync::Arc::new(std::sync::Mutex::new(
@@ -204,23 +204,25 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
 
         let terminal_size = terminal.size()?;
         let size = ratatui::layout::Rect::new(0, 0, terminal_size.width, terminal_size.height);
+        // Outer: [content area | help bar]
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(3), Constraint::Length(2)].as_ref())
             .split(size);
 
+        // Content area: [top list pane | bottom detail pane]
         let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(35), Constraint::Percentage(65)].as_ref())
             .split(main_layout[0]);
 
-        let right_pane_width = (chunks[1].width as usize).saturating_sub(2);
+        let bottom_pane_width = (chunks[1].width as usize).saturating_sub(2);
 
         let mut detail_lines = Vec::new();
         let max_right_scroll;
         let right_title: String;
 
-        let right_border_style = if active_pane == ActivePane::Right {
+        let bottom_border_style = if active_pane == ActivePane::Bottom {
             crate::ui::styles::style_border_active()
         } else {
             crate::ui::styles::style_border_inactive()
@@ -263,6 +265,25 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                     Span::styled(&detailed_task.creator.username, Style::default().fg(crate::ui::styles::COLOR_FG)),
                 ]));
 
+                let task_url = format!("https://app.clickup.com/t/{}/{}", cfg.workspace_id, detailed_task.id);
+                let mut link_spans = vec![
+                    Span::styled("Link:      ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                ];
+                for seg in crate::util::format::parse_links(&task_url) {
+                    match seg {
+                        crate::util::format::TextSegment::Plain(t) => {
+                            link_spans.push(Span::styled(t, Style::default().fg(crate::ui::styles::COLOR_FG)));
+                        }
+                        crate::util::format::TextSegment::Link { url, text: _ } => {
+                            link_spans.push(Span::styled(
+                                url,
+                                Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::UNDERLINED),
+                            ));
+                        }
+                    }
+                }
+                detail_lines.push(Line::from(link_spans));
+
                 detail_lines.push(Line::from(""));
 
                 detail_lines.push(Line::from(vec![
@@ -272,7 +293,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                     Span::styled("───────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                 ]));
 
-                let wrapped_desc = crate::util::format::wrap_text_by_words(desc_text, right_pane_width);
+                let wrapped_desc = crate::util::format::wrap_text_by_words(desc_text, bottom_pane_width);
                 for line in wrapped_desc {
                     let segments = crate::util::format::parse_links(&line);
                     let mut spans = Vec::new();
@@ -314,7 +335,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             Span::styled(format!("{} ", c.user.username), Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_FG)),
                             Span::styled(format!("({})", dt), Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                         ]));
-                        let wrapped_comment = crate::util::format::wrap_text_by_words(&c.comment_text, right_pane_width.saturating_sub(2));
+                        let wrapped_comment = crate::util::format::wrap_text_by_words(&c.comment_text, bottom_pane_width.saturating_sub(2));
                         for line in wrapped_comment {
                             let segments = crate::util::format::parse_links(&line);
                             let mut spans = vec![Span::styled("  ", Style::default().fg(crate::ui::styles::COLOR_FG))];
@@ -341,11 +362,10 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
 
                 // Calculate maximum vertical scroll
                 let total_detail_lines = detail_lines.len();
-                let main_layout_height = size.height.saturating_sub(2);
-                let right_pane_height = main_layout_height.saturating_sub(2) as usize;
-                max_right_scroll = total_detail_lines.saturating_sub(right_pane_height) as u16;
+                let bottom_pane_height = chunks[1].height.saturating_sub(2) as usize;
+                max_right_scroll = total_detail_lines.saturating_sub(bottom_pane_height) as u16;
 
-                right_title = if active_pane == ActivePane::Right {
+                right_title = if active_pane == ActivePane::Bottom {
                     format!(" Task: {} (Focused) ", detailed_task.name)
                 } else {
                     format!(" Task: {} ", detailed_task.name)
@@ -356,7 +376,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                         Block::default()
                             .borders(Borders::ALL)
                             .title(right_title)
-                            .border_style(right_border_style),
+                            .border_style(bottom_border_style),
                     )
                     .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                     .scroll((right_scroll, 0))
@@ -383,7 +403,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                         Block::default()
                             .borders(Borders::ALL)
                             .title(" Loading Task ")
-                            .border_style(right_border_style),
+                            .border_style(bottom_border_style),
                     )
                     .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
                     .wrap(Wrap { trim: true })
@@ -420,17 +440,17 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                 .split(size);
 
             let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(35), Constraint::Percentage(65)].as_ref())
                 .split(main_layout[0]);
 
-            let left_border_style = if active_pane == ActivePane::Left {
+            let top_border_style = if active_pane == ActivePane::Top {
                 crate::ui::styles::style_border_active()
             } else {
                 crate::ui::styles::style_border_inactive()
             };
 
-            // Split left pane vertically when the search bar is active
+            // Split top pane to add search bar above the list when filter editor is active
             let (search_area_opt, task_list_area) = if state == BrowseState::FilterEditor {
                 let sub = Layout::default()
                     .direction(Direction::Vertical)
@@ -458,7 +478,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                 ));
             }
 
-            // Left Pane: Tasks List
+            // Top Pane: Tasks List
             let items: Vec<ListItem> = filtered_indices
                 .iter()
                 .map(|&real_idx| {
@@ -484,25 +504,22 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                         Style::default().fg(crate::ui::styles::COLOR_FG)
                     );
 
-                    ListItem::new(vec![
-                        Line::from(vec![date_span, status_span, name_span]),
-                        Line::from(""),
-                    ])
+                    ListItem::new(Line::from(vec![date_span, status_span, name_span]))
                 })
                 .collect();
 
-            let left_list = RatatuiList::new(items)
+            let top_list = RatatuiList::new(items)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .title(left_pane_title.clone())
-                        .border_style(left_border_style),
+                        .border_style(top_border_style),
                 )
                 .highlight_style(crate::ui::styles::style_selected());
 
-            f.render_stateful_widget(left_list, task_list_area, &mut list_state);
+            f.render_stateful_widget(top_list, task_list_area, &mut list_state);
 
-            // Right Pane
+            // Bottom Pane: Task Detail
             f.render_widget(right_pane_widget, chunks[1]);
 
             // Help Bar
@@ -659,13 +676,13 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 match active_pane {
-                                    ActivePane::Left => {
+                                    ActivePane::Top => {
                                         if selected_filtered_pos > 0 {
                                             list_state.select(Some(selected_filtered_pos - 1));
                                             right_scroll = 0;
                                         }
                                     }
-                                    ActivePane::Right => {
+                                    ActivePane::Bottom => {
                                         if right_scroll > 0 {
                                             right_scroll -= 1;
                                         }
@@ -674,13 +691,13 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 match active_pane {
-                                    ActivePane::Left => {
+                                    ActivePane::Top => {
                                         if selected_filtered_pos + 1 < filtered_indices.len() {
                                             list_state.select(Some(selected_filtered_pos + 1));
                                             right_scroll = 0;
                                         }
                                     }
-                                    ActivePane::Right => {
+                                    ActivePane::Bottom => {
                                         if right_scroll < max_right_scroll {
                                             right_scroll += 1;
                                         }
@@ -688,15 +705,15 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                                 }
                             }
                             KeyCode::Left | KeyCode::Char('h') => {
-                                active_pane = ActivePane::Left;
+                                active_pane = ActivePane::Top;
                             }
                             KeyCode::Right | KeyCode::Char('l') => {
-                                active_pane = ActivePane::Right;
+                                active_pane = ActivePane::Bottom;
                             }
                             KeyCode::Tab | KeyCode::BackTab => {
                                 active_pane = match active_pane {
-                                    ActivePane::Left => ActivePane::Right,
-                                    ActivePane::Right => ActivePane::Left,
+                                    ActivePane::Top => ActivePane::Bottom,
+                                    ActivePane::Bottom => ActivePane::Top,
                                 };
                             }
                             KeyCode::Char('c') => {

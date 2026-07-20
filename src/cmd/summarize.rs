@@ -9,6 +9,7 @@ pub async fn run_summarize<A: ClickUpApi>(
     api: &A,
     all_flag: bool,
     mine_only: bool,
+    markdown_flag: bool,
 ) -> Result<()> {
     let cfg = Config::load()?;
     let summarizer = GeminiSummarizer::new();
@@ -56,7 +57,11 @@ pub async fn run_summarize<A: ClickUpApi>(
         println!("Generating summary for folder: {}...", folder.name);
         match summarizer.summarize_tasks(&folder.name, &folder_tasks).await {
             Ok(summary) => {
-                termimad::print_text(&summary);
+                if markdown_flag {
+                    println!("{}", summary);
+                } else {
+                    termimad::print_text(&summary);
+                }
                 println!("\n---\n");
             }
             Err(e) => {

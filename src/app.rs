@@ -86,6 +86,9 @@ pub enum Commands {
 
         #[arg(long, default_value = "true", action = clap::ArgAction::Set, help = "Only show my tasks")]
         mine: bool,
+
+        #[arg(long, short = 'm', help = "Output raw markdown instead of rendering styled terminal text")]
+        markdown: bool,
     },
     #[command(about = "View task workload grouped by team member")]
     Workload,
@@ -99,6 +102,9 @@ pub enum Commands {
 
         #[arg(long, short = 'c', default_value = "false", help = "Show raw events log")]
         raw: bool,
+
+        #[arg(long, short = 'm', help = "Output raw markdown instead of rendering styled terminal text")]
+        markdown: bool,
     },
     #[command(about = "Track specific user activity in configured folders")]
     Track {
@@ -116,6 +122,9 @@ pub enum Commands {
 
         #[arg(long, help = "Output activity log to JSON file in current directory")]
         json: bool,
+
+        #[arg(long, short = 'm', help = "Output raw markdown instead of rendering styled terminal text")]
+        markdown: bool,
     },
     #[command(about = "Manage the local database cache store")]
     Cache {

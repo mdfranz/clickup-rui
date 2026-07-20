@@ -110,13 +110,35 @@ cargo run --release -- setup
 | `browse` | Launches the premium interactive dual-pane task dashboard |
 | `new` | Runs the wizard to create a new task with a searchable assignee picker |
 | `standup` | Launches the rapid daily standup wizard |
-| `summarize` | AI-summarizes tasks in configured folders |
-| `team-status` | Compiles team activities with optional AI highlights |
-| `track [user]` | Tracks activity logs (supports `--csv` / `--json` export and `--summarize`) |
+| `summarize` | AI-summarizes tasks in configured folders (supports `--markdown` / `-m`) |
+| `team-status` | Compiles team activities with optional AI highlights (supports `--markdown` / `-m`) |
+| `track [user]` | Tracks activity logs (supports `--csv` / `--json` export, `--summarize`, and `--markdown` / `-m`) |
 | `cache info` | Details local cache store statistics and file metrics |
 | `cache clear` | Safely purges local cache file |
 | `clean` | Interactively prompts to delete configs and cache files |
 | `show` | Outputs active space, workspace, and currently authenticated user |
+
+### 📝 Raw Markdown Output
+
+For commands that generate AI-powered summaries, you can pass the `--markdown` / `-m` flag to output the raw markdown text directly to stdout. This makes it extremely easy to copy-paste or redirect the output into reports, daily notes, or separate files.
+
+This option is supported on:
+* **`summarize`**: AI-summarizes configured folder task sets.
+* **`team-status`**: Compiles recent team-activity summaries.
+* **`track`**: Tracks individual user activity logs with daily summaries.
+
+**Examples:**
+
+```bash
+# Save raw folder task summaries directly to a markdown file
+clickup-rui summarize -m > folder_summaries.md
+
+# Output raw team activity summary to stdout without terminal styling
+clickup-rui team-status -m
+
+# Track and save a user's recent daily summaries directly to a file
+clickup-rui track 111900148 --summarize -m > user_updates.md
+```
 
 ---
 

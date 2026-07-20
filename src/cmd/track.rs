@@ -17,6 +17,7 @@ pub async fn run_track<A: ClickUpApi>(
     raw_flag: bool,
     csv_flag: bool,
     json_flag: bool,
+    markdown_flag: bool,
 ) -> Result<()> {
     let mut spinner = Spinner::start("Loading workspace users");
     let teams = match api.get_teams().await {
@@ -60,7 +61,7 @@ pub async fn run_track<A: ClickUpApi>(
         }
     };
 
-    track_user_activities(api, target_user, summarize, raw_flag, csv_flag, json_flag).await?;
+    track_user_activities(api, target_user, summarize, raw_flag, csv_flag, json_flag, markdown_flag).await?;
     Ok(())
 }
 
@@ -71,6 +72,7 @@ async fn track_user_activities<A: ClickUpApi>(
     raw_flag: bool,
     csv_flag: bool,
     json_flag: bool,
+    markdown_flag: bool,
 ) -> Result<()> {
     let mut spinner = Spinner::start("Fetching user activity logs");
     let cfg = Config::load()?;
@@ -314,7 +316,11 @@ async fn track_user_activities<A: ClickUpApi>(
                 );
             }
         } else {
-            termimad::print_text(&formatted_summary);
+            if markdown_flag {
+                println!("{}", formatted_summary);
+            } else {
+                termimad::print_text(&formatted_summary);
+            }
         }
     }
 

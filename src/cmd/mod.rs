@@ -46,9 +46,9 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
         Commands::Standup { all, mine } => {
             standup::run_standup(api, all, mine).await?;
         }
-        Commands::Summarize { all, team, mine } => {
+        Commands::Summarize { all, team, mine, markdown } => {
             let mine_only = if team { false } else { mine };
-            summarize::run_summarize(api, all, mine_only).await?;
+            summarize::run_summarize(api, all, mine_only, markdown).await?;
         }
         Commands::Workload => {
             workload::run_workload(api).await?;
@@ -57,8 +57,9 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
             days,
             summarize,
             raw,
+            markdown,
         } => {
-            team_status::run_team_status(api, days, summarize, raw).await?;
+            team_status::run_team_status(api, days, summarize, raw, markdown).await?;
         }
         Commands::Track {
             user_id,
@@ -66,8 +67,9 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
             raw,
             csv,
             json,
+            markdown,
         } => {
-            track::run_track(api, user_id, summarize, raw, csv, json).await?;
+            track::run_track(api, user_id, summarize, raw, csv, json, markdown).await?;
         }
         Commands::Cache { cmd } => match cmd {
             crate::app::CacheSubcommands::Clear => cache_cmd::run_cache_clear().await?,

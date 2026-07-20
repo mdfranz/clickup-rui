@@ -14,6 +14,7 @@ pub async fn run_team_status<A: ClickUpApi>(
     days: u32,
     summarize: bool,
     raw_flag: bool,
+    markdown_flag: bool,
 ) -> Result<()> {
     let cfg = Config::load()?;
     let mut spinner = Spinner::start("Gathering team activity logs");
@@ -199,7 +200,11 @@ pub async fn run_team_status<A: ClickUpApi>(
                 );
             }
         } else {
-            termimad::print_text(&formatted_summary);
+            if markdown_flag {
+                println!("{}", formatted_summary);
+            } else {
+                termimad::print_text(&formatted_summary);
+            }
         }
     }
 

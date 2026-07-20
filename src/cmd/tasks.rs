@@ -18,6 +18,7 @@ pub async fn run_tasks<A: ClickUpApi>(
     show_id: bool,
 ) -> Result<()> {
     let cfg = Config::load()?;
+    let workspace_id = cfg.workspace_id.clone();
 
     let mut spinner = Spinner::start("Fetching current user");
     let user = api.get_current_user().await?;
@@ -155,6 +156,7 @@ pub async fn run_tasks<A: ClickUpApi>(
                     detailed,
                     summarize,
                     show_id,
+                    &workspace_id,
                     0,
                 )
                 .await?;
@@ -175,6 +177,7 @@ async fn render_task_node<A: ClickUpApi>(
     detailed: bool,
     summarize: bool,
     show_id: bool,
+    workspace_id: &str,
     indent: usize,
 ) -> Result<()> {
     let spaces = " ".repeat(indent * 4 + 4);
@@ -197,6 +200,12 @@ async fn render_task_node<A: ClickUpApi>(
         "{}[{}] {} | updated: {} | assignees: {}",
         spaces, task.status.status, task.name, date_str, assignees_str
     );
+    if indent == 0 {
+        println!(
+            "{}    \x1B[36mhttps://app.clickup.com/t/{}/{}\x1B[0m",
+            spaces, workspace_id, task.id
+        );
+    }
 
     // Collect comments if detailed or summarize
     if detailed && indent == 0 {
@@ -312,6 +321,7 @@ async fn render_task_node<A: ClickUpApi>(
                 detailed,
                 summarize,
                 show_id,
+                workspace_id,
                 indent + 1,
             ))
             .await?;

@@ -1,5 +1,5 @@
 use crate::clickup::api::ClickUpApi;
-use crate::clickup::models::{Comment, Task};
+use crate::clickup::models::{Comment, Status, Tag, Task};
 use crate::config::Config;
 use crate::util::errors::Result;
 use crate::util::format::{format_comment_date, format_task_date};
@@ -14,6 +14,7 @@ use ratatui::Terminal;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::{Arc, Mutex};
+
 
 #[derive(PartialEq, Eq)]
 enum WorkloadPane {
@@ -36,11 +37,13 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
     api: &A,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<()> {
+    'reload: loop {
     let cfg = Config::load()?;
 
     draw_loader(terminal, "Connecting to ClickUp", "Fetching workspace tasks...")?;
 
     let mut all_tasks: Vec<Task> = Vec::new();
+    let mut task_list_map = std::collections::HashMap::new();
 
     let total_folders = cfg.folders.len();
     for (f_idx, folder) in cfg.folders.iter().enumerate() {
@@ -64,6 +67,9 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                     &format!("List: {}", list.name),
                 )?;
                 if let Ok(t_list) = api.get_tasks(&list.id, true).await {
+                    for task in &t_list {
+                        task_list_map.insert(task.id.clone(), list.id.clone());
+                    }
                     all_tasks.extend(t_list);
                 }
             }
@@ -165,6 +171,15 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
     let mut show_comment_editor = false;
     let mut comment_buffer = String::new();
 
+    let mut show_status_picker = false;
+    let mut list_statuses: Vec<Status> = Vec::new();
+    let mut statuses_state = ListState::default();
+
+    let mut show_tag_picker = false;
+    let mut space_tags: Vec<Tag> = Vec::new();
+    let mut tags_state = ListState::default();
+    let mut task_tag_selection: Vec<bool> = Vec::new();
+
     let mut member_state = ListState::default();
     member_state.select(Some(0));
 
@@ -180,11 +195,12 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
 
     loop {
         let member_idx = member_state.selected().unwrap_or(0);
-        let member = &members[member_idx];
+        let member_username = members[member_idx].username.clone();
 
-        let filtered_tasks: Vec<&Task> = member.tasks
+        let filtered_tasks: Vec<Task> = members[member_idx].tasks
             .iter()
             .filter(|t| !excluded_statuses.contains(&t.status.status.to_lowercase()))
+            .cloned()
             .collect();
 
         let task_idx = task_state.selected().unwrap_or(0).min(filtered_tasks.len().saturating_sub(1));
@@ -194,7 +210,7 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
 
         // Trigger background fetch for current task
         if !filtered_tasks.is_empty() {
-            let current_task = filtered_tasks[task_idx];
+            let current_task = &filtered_tasks[task_idx];
             let (has_detail, has_comments) = {
                 let details = cached_task_details.lock().unwrap();
                 let comments = cached_comments.lock().unwrap();
@@ -234,6 +250,27 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             }
         }
 
+        // Layout calculation for precise width of Detail Pane
+        let terminal_size = terminal.size()?;
+        let size = ratatui::layout::Rect::new(0, 0, terminal_size.width, terminal_size.height);
+
+        let main_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(2)].as_ref())
+            .split(size);
+
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(17),
+                Constraint::Percentage(38),
+                Constraint::Percentage(45),
+            ].as_ref())
+            .split(main_layout[0]);
+
+        let detail_pane_width = (chunks[2].width as usize).saturating_sub(2);
+        let detail_pane_height = (chunks[2].height as usize).saturating_sub(2);
+
         // Build detail pane content
         let detail_widget;
         let max_right_scroll: u16;
@@ -245,7 +282,7 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             } else {
                 crate::ui::styles::style_border_inactive()
             };
-            let empty_msg = if member.tasks.is_empty() {
+            let empty_msg = if members[member_idx].tasks.is_empty() {
                 "   No tasks for this member."
             } else {
                 "   No tasks match the current filter."
@@ -269,7 +306,7 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                     .bg(crate::ui::styles::COLOR_BG),
             );
         } else {
-            let current_task = filtered_tasks[task_idx];
+            let current_task = &filtered_tasks[task_idx];
             let detailed_task = cached_task_details.lock().unwrap().get(&current_task.id).cloned();
             let comments = cached_comments.lock().unwrap().get(&current_task.id).cloned();
             let detail_border = if active_pane == WorkloadPane::Detail {
@@ -298,6 +335,17 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         Span::styled("Assignees: ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
                         Span::styled(assignees, Style::default().fg(crate::ui::styles::COLOR_FG)),
                     ]));
+
+                    let tags_display = if det.tags.is_empty() {
+                        "None".to_string()
+                    } else {
+                        det.tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")
+                    };
+                    detail_lines.push(Line::from(vec![
+                        Span::styled("Tags:      ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                        Span::styled(tags_display, Style::default().fg(crate::ui::styles::COLOR_FG)),
+                    ]));
+
                     detail_lines.push(Line::from(vec![
                         Span::styled("Creator:   ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
                         Span::styled(det.creator.username.clone(), Style::default().fg(crate::ui::styles::COLOR_FG)),
@@ -306,6 +354,26 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         Span::styled("Updated:   ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
                         Span::styled(format_task_date(&det.date_updated), Style::default().fg(crate::ui::styles::COLOR_FG)),
                     ]));
+
+                    let task_url = format!("https://app.clickup.com/t/{}/{}", cfg.workspace_id, det.id);
+                    let mut link_spans = vec![
+                        Span::styled("Link:      ", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_MUTED)),
+                    ];
+                    for seg in crate::util::format::parse_links(&task_url) {
+                        match seg {
+                            crate::util::format::TextSegment::Plain(t) => {
+                                link_spans.push(Span::styled(t, Style::default().fg(crate::ui::styles::COLOR_FG)));
+                            }
+                            crate::util::format::TextSegment::Link { url, text: _ } => {
+                                link_spans.push(Span::styled(
+                                    url,
+                                    Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::UNDERLINED),
+                                ));
+                            }
+                        }
+                    }
+                    detail_lines.push(Line::from(link_spans));
+
                     detail_lines.push(Line::from(""));
                     detail_lines.push(Line::from(vec![
                         Span::styled("Description", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
@@ -313,11 +381,29 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                     detail_lines.push(Line::from(vec![
                         Span::styled("───────────", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                     ]));
-                    for line in desc_text.lines() {
-                        detail_lines.push(Line::from(vec![
-                            Span::styled(line.to_owned(), Style::default().fg(crate::ui::styles::COLOR_FG)),
-                        ]));
+
+                    let wrapped_desc = crate::util::format::wrap_text_by_words(desc_text, detail_pane_width);
+                    for line in wrapped_desc {
+                        let segments = crate::util::format::parse_links(&line);
+                        let mut spans = Vec::new();
+                        for seg in segments {
+                            match seg {
+                                crate::util::format::TextSegment::Plain(t) => {
+                                    spans.push(Span::styled(t, Style::default().fg(crate::ui::styles::COLOR_FG)));
+                                }
+                                crate::util::format::TextSegment::Link { url, text: _ } => {
+                                    spans.push(Span::styled(
+                                        url,
+                                        Style::default()
+                                            .fg(ratatui::style::Color::Cyan)
+                                            .add_modifier(Modifier::UNDERLINED),
+                                    ));
+                                }
+                            }
+                        }
+                        detail_lines.push(Line::from(spans));
                     }
+
                     detail_lines.push(Line::from(""));
                     detail_lines.push(Line::from(vec![
                         Span::styled("Comments", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
@@ -336,19 +422,32 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                                 Span::styled(format!("{} ", c.user.username), Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_FG)),
                                 Span::styled(format!("({})", dt), Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                             ]));
-                            for line in c.comment_text.lines() {
-                                detail_lines.push(Line::from(vec![
-                                    Span::styled(format!("  {}", line), Style::default().fg(crate::ui::styles::COLOR_FG)),
-                                ]));
+                            let wrapped_comment = crate::util::format::wrap_text_by_words(&c.comment_text, detail_pane_width.saturating_sub(2));
+                            for line in wrapped_comment {
+                                let segments = crate::util::format::parse_links(&line);
+                                let mut spans = vec![Span::styled("  ", Style::default().fg(crate::ui::styles::COLOR_FG))];
+                                for seg in segments {
+                                    match seg {
+                                        crate::util::format::TextSegment::Plain(t) => {
+                                            spans.push(Span::styled(t, Style::default().fg(crate::ui::styles::COLOR_FG)));
+                                        }
+                                        crate::util::format::TextSegment::Link { url, text: _ } => {
+                                            spans.push(Span::styled(
+                                                url,
+                                                Style::default()
+                                                    .fg(ratatui::style::Color::Cyan)
+                                                    .add_modifier(Modifier::UNDERLINED),
+                                            ));
+                                        }
+                                    }
+                                }
+                                detail_lines.push(Line::from(spans));
                             }
                             detail_lines.push(Line::from(""));
                         }
                     }
 
-                    let size = terminal.size()?;
-                    let main_h = size.height.saturating_sub(2);
-                    let pane_h = main_h.saturating_sub(2) as usize;
-                    max_right_scroll = detail_lines.len().saturating_sub(pane_h) as u16;
+                    max_right_scroll = detail_lines.len().saturating_sub(detail_pane_height) as u16;
 
                     let title = if active_pane == WorkloadPane::Detail {
                         format!(" Task: {} (Focused) ", det.name)
@@ -364,7 +463,6 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                                 .border_style(detail_border),
                         )
                         .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
-                        .wrap(Wrap { trim: true })
                         .scroll((right_scroll, 0));
                 }
                 _ => {
@@ -514,21 +612,21 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             // Help bar
             let help_line = Line::from(vec![
                 Span::styled(" Tab", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled("/", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
-                Span::styled("←→", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Switch Pane |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                Span::styled(" j/k", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled("/", Style::default().fg(crate::ui::styles::COLOR_MUTED)),
-                Span::styled("↑↓", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled(" Navigate |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                Span::styled(" f", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled(" Filter Status |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" c", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Comment |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                Span::styled(" Enter", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled(" Detail |", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                Span::styled(" Esc", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled(" Back |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" s", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Status |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" t", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Tags |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" f", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Filter |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" n", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" New Task |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" r", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Reload |", Style::default().fg(crate::ui::styles::COLOR_FG)),
+                Span::styled(" ↑/↓ (j/k)", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(" Navigate |", Style::default().fg(crate::ui::styles::COLOR_FG)),
                 Span::styled(" q", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
                 Span::styled(" Quit", Style::default().fg(crate::ui::styles::COLOR_FG)),
             ]);
@@ -572,6 +670,73 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                     .highlight_style(crate::ui::styles::style_selected());
 
                 f.render_stateful_widget(picker, popup_layout, &mut filter_picker_state);
+            }
+
+            // Status Picker popup
+            if show_status_picker {
+                let popup_layout = crate::ui::get_popup_layout(size, 40, 50);
+                f.render_widget(Clear, popup_layout);
+
+                let items: Vec<ListItem> = list_statuses
+                    .iter()
+                    .map(|s| {
+                        ListItem::new(format!("  {}", s.status))
+                            .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    })
+                    .collect();
+
+                let picker_list = RatatuiList::new(items)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Change Status (Enter to select, Esc to close) ")
+                            .border_style(crate::ui::styles::style_border_active()),
+                    )
+                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    .highlight_style(crate::ui::styles::style_selected());
+
+                f.render_stateful_widget(picker_list, popup_layout, &mut statuses_state);
+            }
+
+            // Tag Picker popup
+            if show_tag_picker {
+                let popup_layout = crate::ui::get_popup_layout(size, 50, 60);
+                f.render_widget(Clear, popup_layout);
+
+                let items: Vec<ListItem> = space_tags
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tag)| {
+                        let checked = if task_tag_selection.get(i).copied().unwrap_or(false) { "[x]" } else { "[ ]" };
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                format!("  {} ", checked),
+                                Style::default().fg(crate::ui::styles::COLOR_MUTED),
+                            ),
+                            Span::styled(
+                                tag.name.clone(),
+                                if task_tag_selection.get(i).copied().unwrap_or(false) {
+                                    Style::default().fg(crate::ui::styles::COLOR_PRIMARY).add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default().fg(crate::ui::styles::COLOR_FG)
+                                },
+                            ),
+                        ]))
+                        .style(Style::default().bg(crate::ui::styles::COLOR_BG))
+                    })
+                    .collect();
+
+                let picker_list = RatatuiList::new(items)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Tags (Space: toggle, Enter: apply, Esc: cancel) ")
+                            .border_style(crate::ui::styles::style_border_active()),
+                    )
+                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    .highlight_style(crate::ui::styles::style_selected());
+
+                f.render_stateful_widget(picker_list, popup_layout, &mut tags_state);
             }
 
             // Comment editor popup
@@ -619,6 +784,136 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         continue;
                     }
 
+                    // Status picker intercepts all keys when open
+                    if show_status_picker {
+                        match key.code {
+                            KeyCode::Esc => {
+                                show_status_picker = false;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let i = statuses_state.selected().unwrap_or(0);
+                                if i > 0 {
+                                    statuses_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                let i = statuses_state.selected().unwrap_or(0);
+                                if i + 1 < list_statuses.len() {
+                                    statuses_state.select(Some(i + 1));
+                                }
+                            }
+                            KeyCode::Enter => {
+                                let idx = statuses_state.selected().unwrap_or(0);
+                                if idx < list_statuses.len() && !filtered_tasks.is_empty() {
+                                    let selected_stat = &list_statuses[idx];
+                                    let current_task = &filtered_tasks[task_idx];
+                                    let task_id = current_task.id.clone();
+
+                                    terminal.draw(|f| {
+                                        crate::ui::styles::render_background(f);
+                                        f.render_widget(
+                                            Paragraph::new("Updating status...").block(
+                                                Block::default().borders(Borders::ALL).title(" Please Wait "),
+                                            ),
+                                            f.area(),
+                                        );
+                                    })?;
+
+                                    if api
+                                        .update_task_status(&task_id, &selected_stat.status)
+                                        .await
+                                        .is_ok()
+                                    {
+                                        cached_task_details.lock().unwrap().remove(&task_id);
+                                        loading_tasks.remove(&task_id);
+                                        if let Some(m) = members.iter_mut().find(|m| m.username == member_username) {
+                                            if let Some(t) = m.tasks.iter_mut().find(|t| t.id == task_id) {
+                                                t.status.status = selected_stat.status.clone();
+                                            }
+                                        }
+                                    }
+                                }
+                                show_status_picker = false;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    // Tag picker intercepts all keys when open
+                    if show_tag_picker {
+                        match key.code {
+                            KeyCode::Esc => {
+                                show_tag_picker = false;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let i = tags_state.selected().unwrap_or(0);
+                                if i > 0 {
+                                    tags_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                let i = tags_state.selected().unwrap_or(0);
+                                if i + 1 < space_tags.len() {
+                                    tags_state.select(Some(i + 1));
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some(idx) = tags_state.selected() {
+                                    if let Some(sel) = task_tag_selection.get_mut(idx) {
+                                        *sel = !*sel;
+                                    }
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if !filtered_tasks.is_empty() {
+                                    let current_task = &filtered_tasks[task_idx];
+                                    let task_id = current_task.id.clone();
+                                    let current_task_tags: Vec<String> = {
+                                        let details = cached_task_details.lock().unwrap();
+                                        details.get(&task_id)
+                                            .map(|t| t.tags.iter().map(|tag| tag.name.clone()).collect())
+                                            .unwrap_or_default()
+                                    };
+
+                                    terminal.draw(|f| {
+                                        crate::ui::styles::render_background(f);
+                                        f.render_widget(
+                                            Paragraph::new("Updating tags...").block(
+                                                Block::default().borders(Borders::ALL).title(" Please Wait "),
+                                            ),
+                                            f.area(),
+                                        );
+                                    })?;
+
+                                    let mut any_err = false;
+                                    for (i, tag) in space_tags.iter().enumerate() {
+                                        let wanted = task_tag_selection.get(i).copied().unwrap_or(false);
+                                        let had = current_task_tags.contains(&tag.name);
+                                        if wanted && !had {
+                                            if api.add_tag_to_task(&task_id, &tag.name).await.is_err() {
+                                                any_err = true;
+                                            }
+                                        } else if !wanted && had {
+                                            if api.remove_tag_from_task(&task_id, &tag.name).await.is_err() {
+                                                any_err = true;
+                                            }
+                                        }
+                                    }
+
+                                    if !any_err {
+                                        cached_task_details.lock().unwrap().remove(&task_id);
+                                        loading_tasks.remove(&task_id);
+                                        api.invalidate_task(&task_id).await;
+                                    }
+                                }
+                                show_tag_picker = false;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     // Filter picker intercepts all keys when open
                     if show_filter_picker {
                         match key.code {
@@ -654,9 +949,9 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                     }
 
                     match key.code {
-                        KeyCode::Char('q') => break,
+                        KeyCode::Char('q') => break 'reload,
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            break;
+                            break 'reload;
                         }
                         KeyCode::Char('f') if active_pane == WorkloadPane::Tasks || active_pane == WorkloadPane::Members => {
                             show_filter_picker = true;
@@ -664,6 +959,76 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         KeyCode::Char('c') if active_pane == WorkloadPane::Tasks && !filtered_tasks.is_empty() => {
                             comment_buffer.clear();
                             show_comment_editor = true;
+                        }
+                        KeyCode::Char('s') if active_pane == WorkloadPane::Tasks && !filtered_tasks.is_empty() => {
+                            let current_task = &filtered_tasks[task_idx];
+                            terminal.draw(|f| {
+                                crate::ui::styles::render_background(f);
+                                f.render_widget(
+                                    Paragraph::new("Loading status list...").block(
+                                        Block::default().borders(Borders::ALL).title(" Please Wait "),
+                                    ),
+                                    f.area(),
+                                );
+                            })?;
+
+                            let mut found_statuses = Vec::new();
+                            if let Some(list_id) = task_list_map.get(&current_task.id) {
+                                if let Ok(ld) = api.get_list_detail(list_id).await {
+                                    found_statuses = ld.statuses;
+                                }
+                            }
+
+                            if found_statuses.is_empty() {
+                                found_statuses = vec![
+                                    Status { status: "To Do".to_string(), color: String::new(), type_: "todo".to_string() },
+                                    Status { status: "In Progress".to_string(), color: String::new(), type_: "custom".to_string() },
+                                    Status { status: "In Review".to_string(), color: String::new(), type_: "custom".to_string() },
+                                    Status { status: "Blocked".to_string(), color: String::new(), type_: "custom".to_string() },
+                                    Status { status: "Complete".to_string(), color: String::new(), type_: "closed".to_string() },
+                                ];
+                            }
+
+                            list_statuses = found_statuses;
+                            statuses_state.select(Some(0));
+                            show_status_picker = true;
+                        }
+                        KeyCode::Char('t') if active_pane == WorkloadPane::Tasks && !filtered_tasks.is_empty() => {
+                            let current_task = &filtered_tasks[task_idx];
+                            if space_tags.is_empty() {
+                                let cfg = Config::load()?;
+                                space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                            }
+                            let current_task_tags: Vec<String> = {
+                                let details = cached_task_details.lock().unwrap();
+                                details.get(&current_task.id)
+                                    .map(|t| t.tags.iter().map(|tag| tag.name.clone()).collect())
+                                    .unwrap_or_default()
+                            };
+                            task_tag_selection = space_tags.iter()
+                                .map(|tag| current_task_tags.contains(&tag.name))
+                                .collect();
+                            tags_state.select(Some(0));
+                            show_tag_picker = true;
+                        }
+                        KeyCode::Char('r') if active_pane == WorkloadPane::Tasks && !filtered_tasks.is_empty() => {
+                            let current_task = &filtered_tasks[task_idx];
+                            cached_task_details.lock().unwrap().remove(&current_task.id);
+                            cached_comments.lock().unwrap().remove(&current_task.id);
+                            loading_tasks.remove(&current_task.id);
+                            api.invalidate_task(&current_task.id).await;
+                        }
+                        KeyCode::Char('n') => {
+                            crossterm::execute!(io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
+                            crossterm::terminal::disable_raw_mode()?;
+
+                            let _ = crate::cmd::new_task::run_new_task(api).await;
+
+                            crossterm::terminal::enable_raw_mode()?;
+                            crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+                            terminal.clear()?;
+
+                            continue 'reload;
                         }
                         KeyCode::Tab => {
                             active_pane = match active_pane {
@@ -755,6 +1120,8 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
         }
     }
 
+    } // 'reload
+
     Ok(())
 }
 
@@ -805,4 +1172,3 @@ fn draw_loader(
     })?;
     Ok(())
 }
-
