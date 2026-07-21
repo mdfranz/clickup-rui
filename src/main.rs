@@ -28,7 +28,6 @@ fn init_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let file = fs::OpenOptions::new()
         .create(true)
-        .write(true)
         .append(true)
         .open(&log_path)?;
 

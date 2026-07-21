@@ -1,10 +1,9 @@
 use crate::ai::summarizer::GeminiSummarizer;
-use crate::cache::ttl::now_ms;
+use crate::cmd::activity::{collect_activities, ActivityScope};
 use crate::clickup::api::ClickUpApi;
 use crate::clickup::models::Activity;
 use crate::config::Config;
 use crate::ui::spinner::Spinner;
-use crate::util::env::is_menu_mode;
 use crate::util::errors::Result;
 use crate::util::format::format_comment_date;
 use std::collections::HashMap;
@@ -15,129 +14,13 @@ pub async fn run_team_status<A: ClickUpApi>(
     summarize: bool,
     raw_flag: bool,
     markdown_flag: bool,
+    menu_mode: bool,
 ) -> Result<()> {
     let cfg = Config::load()?;
     let mut spinner = Spinner::start("Gathering team activity logs");
 
-    let now = now_ms();
-    let date_from = now - (days as i64 * 24 * 3600 * 1000);
-
-    let mut activities = Vec::new();
-
-    for folder in &cfg.folders {
-        let lists = match api.get_lists(&folder.id).await {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
-        for list in &lists {
-            let tasks = match api.get_tasks_incremental(&list.id, date_from).await {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-
-            for task in tasks {
-                let created_ms = task
-                    .date_created
-                    .as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-                let updated_ms = task
-                    .date_updated
-                    .as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-
-                if created_ms >= date_from {
-                    activities.push(Activity {
-                        id: format!("{}-created", task.id),
-                        user: task.creator.clone(),
-                        type_: "created task".to_string(),
-                        date: created_ms.to_string(),
-                        task_id: task.id.clone(),
-                        source: "api".to_string(),
-                        detail: Some(task.status.status.clone()),
-                        task_name: Some(task.name.clone()),
-                    });
-                }
-
-                // ClickUp v2 doesn't expose who performed a transition, so attribute
-                // done/closed/updated to the creator as the best available proxy.
-                let done_ms = task
-                    .date_done
-                    .as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-                let closed_ms = task
-                    .date_closed
-                    .as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-
-                if done_ms >= date_from {
-                    activities.push(Activity {
-                        id: format!("{}-done", task.id),
-                        user: task.creator.clone(),
-                        type_: "completed task".to_string(),
-                        date: done_ms.to_string(),
-                        task_id: task.id.clone(),
-                        source: "api".to_string(),
-                        detail: Some(task.status.status.clone()),
-                        task_name: Some(task.name.clone()),
-                    });
-                } else if closed_ms >= date_from {
-                    activities.push(Activity {
-                        id: format!("{}-closed", task.id),
-                        user: task.creator.clone(),
-                        type_: "closed task".to_string(),
-                        date: closed_ms.to_string(),
-                        task_id: task.id.clone(),
-                        source: "api".to_string(),
-                        detail: Some(task.status.status.clone()),
-                        task_name: Some(task.name.clone()),
-                    });
-                } else if updated_ms >= date_from && updated_ms > created_ms {
-                    activities.push(Activity {
-                        id: format!("{}-updated", task.id),
-                        user: task.creator.clone(),
-                        type_: "updated task".to_string(),
-                        date: updated_ms.to_string(),
-                        task_id: task.id.clone(),
-                        source: "api".to_string(),
-                        detail: Some(task.status.status.clone()),
-                        task_name: Some(task.name.clone()),
-                    });
-                }
-
-                if updated_ms >= date_from {
-                    if let Ok(comments) = api.get_task_comments(&task.id).await {
-                        for comment in comments {
-                            if let Ok(comment_ms) = comment.date.parse::<i64>() {
-                                if comment_ms >= date_from {
-                                    activities.push(Activity {
-                                        id: format!("{}-comment-{}", task.id, comment.id),
-                                        user: comment.user.clone(),
-                                        type_: "commented on task".to_string(),
-                                        date: comment_ms.to_string(),
-                                        task_id: task.id.clone(),
-                                        source: "api".to_string(),
-                                        detail: Some(comment.comment_text.clone()),
-                                        task_name: Some(task.name.clone()),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    activities.sort_by(|a, b| {
-        let a_time = a.date.parse::<i64>().ok().unwrap_or(0);
-        let b_time = b.date.parse::<i64>().ok().unwrap_or(0);
-        b_time.cmp(&a_time)
-    });
+    let date_from = crate::cache::ttl::now_ms() - (days as i64 * 24 * 3600 * 1000);
+    let activities = collect_activities(api, &cfg.folders, date_from, ActivityScope::Team).await;
 
     spinner.stop();
 
@@ -188,7 +71,7 @@ pub async fn run_team_status<A: ClickUpApi>(
         show_raw = true;
     }
 
-    if is_menu_mode() {
+    if menu_mode {
         run_scrollable_tui(formatted_summary, activities, show_raw).await?;
     } else {
         if show_raw {
@@ -273,14 +156,10 @@ async fn run_scrollable_tui(
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break,
                         KeyCode::Up | KeyCode::Char('k') => {
-                            if scroll > 0 {
-                                scroll -= 1;
-                            }
+                            scroll = scroll.saturating_sub(1);
                         }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if scroll + 5 < total_lines {
-                                scroll += 1;
-                            }
+                        KeyCode::Down | KeyCode::Char('j') if scroll + 5 < total_lines => {
+                            scroll += 1;
                         }
                         _ => {}
                     }

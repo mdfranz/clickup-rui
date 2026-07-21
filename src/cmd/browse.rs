@@ -683,9 +683,7 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                                         }
                                     }
                                     ActivePane::Bottom => {
-                                        if right_scroll > 0 {
-                                            right_scroll -= 1;
-                                        }
+                                        right_scroll = right_scroll.saturating_sub(1);
                                     }
                                 }
                             }
@@ -939,10 +937,11 @@ async fn run_browse_loop<A: ClickUpApi + Clone + 'static>(
                                         if api.add_tag_to_task(&task_id, &tag.name).await.is_err() {
                                             any_err = true;
                                         }
-                                    } else if !wanted && had {
-                                        if api.remove_tag_from_task(&task_id, &tag.name).await.is_err() {
-                                            any_err = true;
-                                        }
+                                    } else if !wanted
+                                        && had
+                                        && api.remove_tag_from_task(&task_id, &tag.name).await.is_err()
+                                    {
+                                        any_err = true;
                                     }
                                 }
 
@@ -1116,4 +1115,3 @@ fn draw_loader(
     })?;
     Ok(())
 }
-

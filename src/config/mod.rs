@@ -37,11 +37,11 @@ pub struct Config {
     #[serde(default = "default_ai_model")]
     pub ai_model: String,
 
-    #[serde(default = "default_ollama_url", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default = "default_ollama_url",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub ollama_url: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gemini_api_key: Option<String>,
 }
 
 impl Config {
@@ -57,8 +57,9 @@ impl Config {
         if let Some(legacy_path) = get_legacy_config_path() {
             if legacy_path.exists() {
                 let content = fs::read_to_string(&legacy_path)?;
-                let config: Config = toml::from_str(&content)
-                    .map_err(|e| AppError::Other(format!("Failed to parse legacy config: {}", e)))?;
+                let config: Config = toml::from_str(&content).map_err(|e| {
+                    AppError::Other(format!("Failed to parse legacy config: {}", e))
+                })?;
                 return Ok(config);
             }
         }
@@ -131,7 +132,6 @@ mod tests {
             ai_provider: default_ai_provider(),
             ai_model: default_ai_model(),
             ollama_url: default_ollama_url(),
-            gemini_api_key: None,
         };
 
         // Save
@@ -148,8 +148,10 @@ mod tests {
         assert_eq!(loaded.folders[0].name, "My Folder");
         assert_eq!(loaded.ai_provider, "gemini");
         assert_eq!(loaded.ai_model, "gemini-3.5-flash");
-        assert_eq!(loaded.ollama_url, Some("http://localhost:11434".to_string()));
-        assert!(loaded.gemini_api_key.is_none());
+        assert_eq!(
+            loaded.ollama_url,
+            Some("http://localhost:11434".to_string())
+        );
 
         // Clean up env
         match original_xdg {
@@ -185,7 +187,6 @@ mod tests {
             ai_provider: default_ai_provider(),
             ai_model: default_ai_model(),
             ollama_url: default_ollama_url(),
-            gemini_api_key: None,
         };
 
         let content = toml::to_string_pretty(&cfg).unwrap();
@@ -206,5 +207,26 @@ mod tests {
             Err(_) => std::env::remove_var("HOME"),
         }
     }
-}
 
+    #[test]
+    fn test_legacy_gemini_key_is_not_serialized() {
+        let config: Config = toml::from_str(
+            r#"
+workspace_id = "w123"
+workspace_name = "My Workspace"
+space_id = "s456"
+space_name = "My Space"
+gemini_api_key = "obsolete-secret"
+
+[[folders]]
+id = "f789"
+name = "My Folder"
+"#,
+        )
+        .unwrap();
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        assert!(!serialized.contains("gemini_api_key"));
+        assert!(!serialized.contains("obsolete-secret"));
+    }
+}

@@ -489,21 +489,32 @@ impl<A: ClickUpApi> ClickUpApi for CachedClient<A> {
     }
 
     async fn add_tag_to_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
-        let result = self.api.add_tag_to_task(task_id, tag_name).await?;
-        self.api.invalidate_task(task_id).await;
-        Ok(result)
+        self.api.add_tag_to_task(task_id, tag_name).await?;
+        self.invalidate_task_tags(task_id).await;
+        Ok(())
     }
 
     async fn remove_tag_from_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
-        let result = self.api.remove_tag_from_task(task_id, tag_name).await?;
-        self.api.invalidate_task(task_id).await;
-        Ok(result)
+        self.api.remove_tag_from_task(task_id, tag_name).await?;
+        self.invalidate_task_tags(task_id).await;
+        Ok(())
     }
 
     async fn invalidate_task(&self, task_id: &str) {
         let mut store = self.store.lock().await;
         store.task_detail_by_task.remove(task_id);
         store.comments_by_task.remove(task_id);
+        store.mark_dirty();
+    }
+}
+
+impl<A: ClickUpApi> CachedClient<A> {
+    async fn invalidate_task_tags(&self, task_id: &str) {
+        let mut store = self.store.lock().await;
+        store.task_detail_by_task.remove(task_id);
+        store
+            .tasks
+            .retain(|_, entry| !entry.tasks.iter().any(|task| task.id == task_id));
         store.mark_dirty();
     }
 }
@@ -564,8 +575,8 @@ mod tests {
             _tags: Option<&[String]>,
         ) -> Result<Task> { unimplemented!() }
         async fn get_space_tags(&self, _space_id: &str) -> Result<Vec<Tag>> { unimplemented!() }
-        async fn add_tag_to_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { unimplemented!() }
-        async fn remove_tag_from_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { unimplemented!() }
+        async fn add_tag_to_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { Ok(()) }
+        async fn remove_tag_from_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { Ok(()) }
     }
 
     fn make_test_task(id: &str, name: &str, date_updated: &str, status: &str) -> Task {
@@ -774,10 +785,50 @@ mod tests {
         // Verify cache store: task "1" entries should be gone, task "2" should remain
         {
             let s = store.lock().await;
-            assert!(s.task_detail_by_task.get("1").is_none());
-            assert!(s.comments_by_task.get("1").is_none());
-            assert!(s.task_detail_by_task.get("2").is_some());
+            assert!(!s.task_detail_by_task.contains_key("1"));
+            assert!(!s.comments_by_task.contains_key("1"));
+            assert!(s.task_detail_by_task.contains_key("2"));
         }
     }
-}
 
+    #[tokio::test]
+    async fn test_tag_update_invalidates_task_and_list_caches() {
+        let store = Arc::new(Mutex::new(CacheStore::new()));
+        let task = make_test_task("1", "Task One", "1000", "open");
+        {
+            let mut cache = store.lock().await;
+            cache.task_detail_by_task.insert(
+                task.id.clone(),
+                CacheEntry {
+                    value: task.clone(),
+                    expires_at: now_secs() + 100,
+                },
+            );
+            cache.tasks.insert(
+                "list_123".to_string(),
+                TaskListCacheEntry {
+                    tasks: vec![task],
+                    fetched_at: now_secs(),
+                    max_date_updated: 1000,
+                    includes_closed: false,
+                },
+            );
+        }
+
+        let cached_client = CachedClient::new(
+            MockApi {
+                tasks: std::sync::Mutex::new(vec![]),
+                incremental_tasks: std::sync::Mutex::new(vec![]),
+                should_fail: AtomicBool::new(false),
+            },
+            store.clone(),
+            false,
+        );
+
+        cached_client.add_tag_to_task("1", "Needs Review").await.unwrap();
+
+        let cache = store.lock().await;
+        assert!(!cache.task_detail_by_task.contains_key("1"));
+        assert!(!cache.tasks.contains_key("list_123"));
+    }
+}

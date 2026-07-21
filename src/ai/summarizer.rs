@@ -85,7 +85,14 @@ impl AiSummarizer {
         match self.config.ai_provider.as_str() {
             "ollama" => {
                 let model = self.get_effective_model().to_string();
-                let url = format!("{}/api/generate", self.config.ollama_url.as_deref().unwrap_or("http://localhost:11434").trim_end_matches('/'));
+                let url = format!(
+                    "{}/api/generate",
+                    self.config
+                        .ollama_url
+                        .as_deref()
+                        .unwrap_or("http://localhost:11434")
+                        .trim_end_matches('/')
+                );
                 let req_body = OllamaRequest {
                     model,
                     prompt: prompt.to_string(),
@@ -98,8 +105,7 @@ impl AiSummarizer {
                     let err_body = res.text().await.unwrap_or_default();
                     return Err(AppError::AiError(format!(
                         "Ollama API returned status {}: {}",
-                        status,
-                        err_body
+                        status, err_body
                     )));
                 }
 
@@ -107,15 +113,7 @@ impl AiSummarizer {
                 Ok(resp_body.response.trim().to_string())
             }
             _ => {
-                let key = if let Some(ref k) = self.config.gemini_api_key {
-                    if !k.is_empty() {
-                        k.clone()
-                    } else {
-                        get_gemini_api_key()?
-                    }
-                } else {
-                    get_gemini_api_key()?
-                };
+                let key = get_gemini_api_key()?;
                 let model = self.get_effective_model();
                 let url = format!(
                     "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
@@ -136,8 +134,7 @@ impl AiSummarizer {
                     let err_body = res.text().await.unwrap_or_default();
                     return Err(AppError::AiError(format!(
                         "Gemini API returned status {}: {}",
-                        status,
-                        err_body
+                        status, err_body
                     )));
                 }
 

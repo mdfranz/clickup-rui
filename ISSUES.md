@@ -33,9 +33,9 @@ All P1 items resolved on 2026-06-11.
 | 7 | Implement `TerminalGuard` RAII struct (Drop restores raw-mode + alt-screen) — replace ~6 copies of TUI setup/teardown boilerplate | L | Med | ✅ Done — safely manages TUI state, preventing terminal corruption on panics and eliminating setup/teardown boilerplate in `browse.rs`, `standup.rs`, `new_task.rs`, `menu.rs`, `setup.rs`, and `track.rs` |
 
 | 8 | Remove dev chain-of-thought comments from `standup.rs:401-424`; port `task_list_map` from `browse.rs:65` to fix O(folders×lists×tasks) search | M | Med | Shipped AI reasoning left as source comments |
-| 9 | Extract shared `collect_activities()` helper — activity pipeline duplicated between `track.rs:67-200` and `team_status.rs:12-140` | M | Med | Differences: user filter and per-assignee fan-out only |
+| 9 | Extract shared `collect_activities()` helper — activity pipeline duplicated between `track.rs:67-200` and `team_status.rs:12-140` | M | Med | ✅ Done — shared collector keeps team/user attribution policies explicit |
 | 10 | Extract `wrap_text_by_chars` to `src/ui/` — currently duplicated in `browse.rs:673`, `standup.rs:496`, `new_task.rs:659` | S | Low | Pure function, no side effects |
-| 11 | Replace `set_menu_mode()` env-var mutation with an explicit flag through `route_command` | M | Med | `std::env::set_var` is unsound in Rust 1.85+ when other threads exist |
+| 11 | Replace `set_menu_mode()` env-var mutation with an explicit flag through `route_command` | M | Med | ✅ Done — `RouteContext` carries menu mode without mutating process environment |
 | 12 | Unify `Status.color: String` and `TaskStatus.color: Option<String>` — make both `Option<String>`, remove empty-string sentinels | S | Med | Forces sentinel construction at `browse.rs:521-528`, `standup.rs:429-436` |
 | 13 | Add `AppError::Cancelled` variant; stop using `Other("Setup cancelled")` for control flow | S | Low | Cancellation prints as an error in `main.rs` |
 | 14 | Replace `reqwest::Client::builder().build().unwrap_or_else(|_| Client::new())` with `.expect()` | S | Low | Silently drops timeout config if builder fails; `clickup/client.rs:19-20`, `ai/summarizer.rs:78-80` |
@@ -54,12 +54,12 @@ All P1 items resolved on 2026-06-11.
 
 | # | Task | LOE | Risk | Notes |
 |---|------|-----|------|-------|
-| 23 | Update README: fix "8 options" → 6, add Ollama + `config` subcommand section, add `--clear-cache`, document env vars | M | Low | `LOG_LOCAL`, `LOG_RESPONSE_BODIES`, `LOG_SENSITIVE_DATA`, `CLICKUP_TUI_MENU` all undocumented |
-| 24 | Update or retire `RUST-PORT.md`: fix binary name `clickup-tui`→`clickup-rui`; update `BrowseState` variants; add `config` command | S | Low | Spec has significant drift from shipped code |
-| 25 | Move `RUST-PORT.md` and `LOGGING_REVIEW.md` to `docs/`; clean repo root of stale spec files | S | Low | Root is noisy; `LOGGING_REVIEW.md` reads as an open TODO |
-| 26 | Run `cargo clippy --fix` to resolve 15 of 16 mechanical warnings | S | Low | `vec![]` vs array literal, redundant `.write(true)`, collapsible matches, needless borrows |
+| 23 | Update README: fix "8 options" → 6, add Ollama + `config` subcommand section, add `--clear-cache`, document env vars | M | Low | ✅ Done — documents cache flags, AI configuration, and logging controls |
+| 24 | Update or retire `RUST-PORT.md`: fix binary name `clickup-tui`→`clickup-rui`; update `BrowseState` variants; add `config` command | S | Low | ✅ Done — retained only as archived implementation history |
+| 25 | Move `RUST-PORT.md` and `LOGGING_REVIEW.md` to `docs/`; clean repo root of stale spec files | S | Low | ✅ Done for `RUST-PORT.md`; `LOGGING_REVIEW.md` remains under `reviews/` |
+| 26 | Run `cargo clippy --fix` to resolve 15 of 16 mechanical warnings | S | Low | ✅ Done — strict `cargo clippy -- -D warnings` passes |
 | 27 | Harden hardcoded status filter in `util/filter.rs` — expose as config field or named constant | M | Med | `"in progress" | "in review" | "blocked" | "scoping"` breaks non-default ClickUp workflows |
-| 28 | Add `--days` flag to `track` command consistent with `team-status`; remove hardcoded 10-day window at `track.rs:79` | M | Low | Feature parity |
+| 28 | Add `--days` flag to `track` command consistent with `team-status`; remove hardcoded 10-day window at `track.rs:79` | M | Low | ✅ Done — defaults to 10 days and accepts `--days` / `-d` |
 | 29 | Parallelize folder→list→task fetches with `futures::stream::iter().buffer_unordered(K)` in browse/standup/track/team_status | L | Med | Currently O(N×M) serial round-trips |
 | 30 | Convert `tasks.rs:296-318` `render_task_node` `Box::pin` recursion to iterative DFS | M | Med | Deep subtask graphs will stack-overflow |
 | 31 | Fix scrollable TUI scroll to be viewport-aware instead of hardcoded `scroll + 5 < total_lines` | M | Low | Breaks on short terminals |

@@ -87,7 +87,11 @@ pub enum Commands {
         #[arg(long, default_value = "true", action = clap::ArgAction::Set, help = "Only show my tasks")]
         mine: bool,
 
-        #[arg(long, short = 'm', help = "Output raw markdown instead of rendering styled terminal text")]
+        #[arg(
+            long,
+            short = 'm',
+            help = "Output raw markdown instead of rendering styled terminal text"
+        )]
         markdown: bool,
     },
     #[command(about = "View task workload grouped by team member")]
@@ -97,13 +101,27 @@ pub enum Commands {
         #[arg(long, short = 'd', default_value = "7", help = "Days window")]
         days: u32,
 
-        #[arg(long, short = 's', default_value = "true", help = "Enable AI summarizer")]
+        #[arg(
+            long,
+            short = 's',
+            default_value = "true",
+            help = "Enable AI summarizer"
+        )]
         summarize: bool,
 
-        #[arg(long, short = 'c', default_value = "false", help = "Show raw events log")]
+        #[arg(
+            long,
+            short = 'c',
+            default_value = "false",
+            help = "Show raw events log"
+        )]
         raw: bool,
 
-        #[arg(long, short = 'm', help = "Output raw markdown instead of rendering styled terminal text")]
+        #[arg(
+            long,
+            short = 'm',
+            help = "Output raw markdown instead of rendering styled terminal text"
+        )]
         markdown: bool,
     },
     #[command(about = "Track specific user activity in configured folders")]
@@ -111,10 +129,23 @@ pub enum Commands {
         #[arg(help = "ClickUp User ID to track")]
         user_id: Option<i64>,
 
-        #[arg(long, short = 's', default_value = "false", help = "Enable AI summarizer")]
+        #[arg(long, short = 'd', default_value = "10", help = "Days window")]
+        days: u32,
+
+        #[arg(
+            long,
+            short = 's',
+            default_value = "false",
+            help = "Enable AI summarizer"
+        )]
         summarize: bool,
 
-        #[arg(long, short = 'c', default_value = "false", help = "Show raw events log")]
+        #[arg(
+            long,
+            short = 'c',
+            default_value = "false",
+            help = "Show raw events log"
+        )]
         raw: bool,
 
         #[arg(long, help = "Output activity log to CSV file in current directory")]
@@ -123,7 +154,11 @@ pub enum Commands {
         #[arg(long, help = "Output activity log to JSON file in current directory")]
         json: bool,
 
-        #[arg(long, short = 'm', help = "Output raw markdown instead of rendering styled terminal text")]
+        #[arg(
+            long,
+            short = 'm',
+            help = "Output raw markdown instead of rendering styled terminal text"
+        )]
         markdown: bool,
     },
     #[command(about = "Manage the local database cache store")]
@@ -141,9 +176,6 @@ pub enum Commands {
 
         #[arg(long, help = "Ollama server URL (defaults to http://localhost:11434)")]
         ollama_url: Option<String>,
-
-        #[arg(long, help = "Gemini API key")]
-        gemini_api_key: Option<String>,
     },
     #[command(about = "Interactive delete prompt for configuration and cache files")]
     Clean,

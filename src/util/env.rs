@@ -26,15 +26,3 @@ pub fn is_log_response_bodies() -> bool {
 pub fn is_log_sensitive_data() -> bool {
     env::var("LOG_SENSITIVE_DATA").map(|v| v == "1").unwrap_or(false)
 }
-
-pub fn is_menu_mode() -> bool {
-    env::var("CLICKUP_TUI_MENU").map(|v| v == "1").unwrap_or(false)
-}
-
-pub fn set_menu_mode(val: bool) {
-    if val {
-        env::set_var("CLICKUP_TUI_MENU", "1");
-    } else {
-        env::remove_var("CLICKUP_TUI_MENU");
-    }
-}

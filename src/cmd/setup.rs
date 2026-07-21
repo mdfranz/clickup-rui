@@ -12,9 +12,9 @@ use std::collections::HashSet;
 use std::io;
 
 enum SetupStep {
-    SelectWorkspace,
-    SelectSpace,
-    SelectFolders,
+    Workspace,
+    Space,
+    Folders,
 }
 
 pub async fn run_setup<A: ClickUpApi>(api: &A) -> Result<()> {
@@ -33,17 +33,18 @@ pub async fn run_setup<A: ClickUpApi>(api: &A) -> Result<()> {
     }
 }
 
-
 async fn run_setup_loop<A: ClickUpApi>(
     api: &A,
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<String> {
-    let mut step = SetupStep::SelectWorkspace;
+    let mut step = SetupStep::Workspace;
 
     // Data lists
     let teams = api.get_teams().await?;
     if teams.is_empty() {
-        return Err(AppError::Other("No workspaces (teams) found in your ClickUp account.".to_string()));
+        return Err(AppError::Other(
+            "No workspaces (teams) found in your ClickUp account.".to_string(),
+        ));
     }
 
     let mut workspaces_state = ListState::default();
@@ -79,9 +80,9 @@ async fn run_setup_loop<A: ClickUpApi>(
 
             // 1. Header
             let header_text = match step {
-                SetupStep::SelectWorkspace => "Step 1/3: Select ClickUp Workspace (Team)",
-                SetupStep::SelectSpace => "Step 2/3: Select ClickUp Space",
-                SetupStep::SelectFolders => "Step 3/3: Multi-select Folders to Track",
+                SetupStep::Workspace => "Step 1/3: Select ClickUp Workspace (Team)",
+                SetupStep::Space => "Step 2/3: Select ClickUp Space",
+                SetupStep::Folders => "Step 3/3: Multi-select Folders to Track",
             };
             let header = Paragraph::new(header_text)
                 .block(Block::default().borders(Borders::BOTTOM))
@@ -90,7 +91,7 @@ async fn run_setup_loop<A: ClickUpApi>(
 
             // 2. Main content list
             match step {
-                SetupStep::SelectWorkspace => {
+                SetupStep::Workspace => {
                     let items: Vec<ListItem> = teams
                         .iter()
                         .map(|t| {
@@ -109,7 +110,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut workspaces_state);
                 }
-                SetupStep::SelectSpace => {
+                SetupStep::Space => {
                     let items: Vec<ListItem> = spaces
                         .iter()
                         .map(|s| {
@@ -128,7 +129,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                         .highlight_style(crate::ui::styles::style_selected());
                     f.render_stateful_widget(list, chunks[1], &mut spaces_state);
                 }
-                SetupStep::SelectFolders => {
+                SetupStep::Folders => {
                     let items: Vec<ListItem> = folders
                         .iter()
                         .map(|fol| {
@@ -156,10 +157,10 @@ async fn run_setup_loop<A: ClickUpApi>(
 
             // 3. Help block
             let help_text = match step {
-                SetupStep::SelectWorkspace | SetupStep::SelectSpace => {
+                SetupStep::Workspace | SetupStep::Space => {
                     "Arrow Up/Down or j/k: navigate | Enter: confirm | q/ctrl+c: quit"
                 }
-                SetupStep::SelectFolders => {
+                SetupStep::Folders => {
                     "Arrow Up/Down or j/k: navigate | Space: toggle folder | Enter: confirm & save | q/ctrl+c: quit"
                 }
             };
@@ -177,23 +178,25 @@ async fn run_setup_loop<A: ClickUpApi>(
                         KeyCode::Char('q') => {
                             return Ok(String::new());
                         }
-                        KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('c')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             return Ok(String::new());
                         }
                         KeyCode::Up | KeyCode::Char('k') => match step {
-                            SetupStep::SelectWorkspace => {
+                            SetupStep::Workspace => {
                                 let i = workspaces_state.selected().unwrap_or(0);
                                 if i > 0 {
                                     workspaces_state.select(Some(i - 1));
                                 }
                             }
-                            SetupStep::SelectSpace => {
+                            SetupStep::Space => {
                                 let i = spaces_state.selected().unwrap_or(0);
                                 if i > 0 {
                                     spaces_state.select(Some(i - 1));
                                 }
                             }
-                            SetupStep::SelectFolders => {
+                            SetupStep::Folders => {
                                 let i = folders_state.selected().unwrap_or(0);
                                 if i > 0 {
                                     folders_state.select(Some(i - 1));
@@ -201,19 +204,19 @@ async fn run_setup_loop<A: ClickUpApi>(
                             }
                         },
                         KeyCode::Down | KeyCode::Char('j') => match step {
-                            SetupStep::SelectWorkspace => {
+                            SetupStep::Workspace => {
                                 let i = workspaces_state.selected().unwrap_or(0);
                                 if i + 1 < teams.len() {
                                     workspaces_state.select(Some(i + 1));
                                 }
                             }
-                            SetupStep::SelectSpace => {
+                            SetupStep::Space => {
                                 let i = spaces_state.selected().unwrap_or(0);
                                 if i + 1 < spaces.len() {
                                     spaces_state.select(Some(i + 1));
                                 }
                             }
-                            SetupStep::SelectFolders => {
+                            SetupStep::Folders => {
                                 let i = folders_state.selected().unwrap_or(0);
                                 if i + 1 < folders.len() {
                                     folders_state.select(Some(i + 1));
@@ -221,7 +224,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                             }
                         },
                         KeyCode::Char(' ') => {
-                            if let SetupStep::SelectFolders = step {
+                            if let SetupStep::Folders = step {
                                 if let Some(i) = folders_state.selected() {
                                     let id = folders[i].id.clone();
                                     if selected_folder_ids.contains(&id) {
@@ -233,7 +236,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                             }
                         }
                         KeyCode::Enter => match step {
-                            SetupStep::SelectWorkspace => {
+                            SetupStep::Workspace => {
                                 let idx = workspaces_state.selected().unwrap_or(0);
                                 let ws = teams[idx].clone();
                                 selected_workspace = Some(ws.clone());
@@ -246,18 +249,18 @@ async fn run_setup_loop<A: ClickUpApi>(
                                     )));
                                 }
                                 spaces_state.select(Some(0));
-                                step = SetupStep::SelectSpace;
+                                step = SetupStep::Space;
                             }
-                            SetupStep::SelectSpace => {
+                            SetupStep::Space => {
                                 let idx = spaces_state.selected().unwrap_or(0);
                                 let sp = spaces[idx].clone();
                                 selected_space = Some(sp.clone());
 
                                 folders = api.get_folders(&sp.id).await?;
                                 folders_state.select(Some(0));
-                                step = SetupStep::SelectFolders;
+                                step = SetupStep::Folders;
                             }
-                            SetupStep::SelectFolders => {
+                            SetupStep::Folders => {
                                 let ws = selected_workspace.as_ref().unwrap();
                                 let sp = selected_space.as_ref().unwrap();
 
@@ -274,28 +277,29 @@ async fn run_setup_loop<A: ClickUpApi>(
                                     // At least one folder should be selected ideally, or allow empty but warn
                                 }
 
-                                let (ai_provider, ai_model, mut ollama_url, gemini_api_key) = if let Ok(existing) = Config::load() {
-                                     (existing.ai_provider, existing.ai_model, existing.ollama_url, existing.gemini_api_key)
-                                 } else {
-                                     ("gemini".to_string(), "gemini-3.5-flash".to_string(), None, None)
-                                 };
+                                let (ai_provider, ai_model, mut ollama_url) = if let Ok(existing) =
+                                    Config::load()
+                                {
+                                    (existing.ai_provider, existing.ai_model, existing.ollama_url)
+                                } else {
+                                    ("gemini".to_string(), "gemini-3.5-flash".to_string(), None)
+                                };
 
-                                 if ai_provider != "ollama" {
-                                     ollama_url = None;
-                                 }
+                                if ai_provider != "ollama" {
+                                    ollama_url = None;
+                                }
 
-                                 let cfg = Config {
-                                     workspace_id: ws.id.clone(),
-                                     workspace_name: ws.name.clone(),
-                                     space_id: sp.id.clone(),
-                                     space_name: sp.name.clone(),
-                                     folders: config_folders.clone(),
-                                     ai_provider,
-                                     ai_model,
-                                     ollama_url,
-                                     gemini_api_key,
-                                 };
-                                 cfg.save()?;
+                                let cfg = Config {
+                                    workspace_id: ws.id.clone(),
+                                    workspace_name: ws.name.clone(),
+                                    space_id: sp.id.clone(),
+                                    space_name: sp.name.clone(),
+                                    folders: config_folders.clone(),
+                                    ai_provider,
+                                    ai_model,
+                                    ollama_url,
+                                };
+                                cfg.save()?;
 
                                 return Ok(format!(
                                     "\nSetup successfully completed!\n\

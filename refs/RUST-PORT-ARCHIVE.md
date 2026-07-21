@@ -1,4 +1,6 @@
-# clickup-tui Rust Port Specification
+# Archived Rust Port Specification
+
+> Historical implementation planning document. It is retained for context only and does not describe the current application. Refer to the README and source code for current behavior.
 
 This document is the single source of truth for implementing a Rust port of `clickup-tui`.
 

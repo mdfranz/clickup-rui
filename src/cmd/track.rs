@@ -1,23 +1,28 @@
 use crate::ai::summarizer::GeminiSummarizer;
-use crate::cache::ttl::now_ms;
+use crate::cmd::activity::{collect_activities, ActivityScope};
 use crate::clickup::api::ClickUpApi;
 use crate::clickup::models::{Activity, User};
 use crate::config::Config;
 use crate::ui::spinner::Spinner;
-use crate::util::env::is_menu_mode;
 use crate::util::errors::Result;
 use crate::util::format::format_comment_date;
 use chrono::{DateTime, Local};
 use std::collections::{HashMap, HashSet};
 
+pub struct TrackOptions {
+    pub days: u32,
+    pub summarize: bool,
+    pub raw: bool,
+    pub csv: bool,
+    pub json: bool,
+    pub markdown: bool,
+    pub menu_mode: bool,
+}
+
 pub async fn run_track<A: ClickUpApi>(
     api: &A,
     user_id: Option<i64>,
-    summarize: bool,
-    raw_flag: bool,
-    csv_flag: bool,
-    json_flag: bool,
-    markdown_flag: bool,
+    options: TrackOptions,
 ) -> Result<()> {
     let mut spinner = Spinner::start("Loading workspace users");
     let teams = match api.get_teams().await {
@@ -61,148 +66,30 @@ pub async fn run_track<A: ClickUpApi>(
         }
     };
 
-    track_user_activities(api, target_user, summarize, raw_flag, csv_flag, json_flag, markdown_flag).await?;
+    track_user_activities(
+        api,
+        target_user,
+        &options,
+    )
+    .await?;
     Ok(())
 }
 
 async fn track_user_activities<A: ClickUpApi>(
     api: &A,
     user: User,
-    summarize: bool,
-    raw_flag: bool,
-    csv_flag: bool,
-    json_flag: bool,
-    markdown_flag: bool,
+    options: &TrackOptions,
 ) -> Result<()> {
     let mut spinner = Spinner::start("Fetching user activity logs");
     let cfg = Config::load()?;
 
-    let now = now_ms();
-    let date_from = now - (10 * 24 * 3600 * 1000); // 10 days window
-
-    let mut activities = Vec::new();
-
-    for folder in &cfg.folders {
-        let lists = match api.get_lists(&folder.id).await {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
-        for list in &lists {
-            let tasks = match api.get_tasks_incremental(&list.id, date_from).await {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-
-            for task in tasks {
-                let created_ms = task
-                    .date_created
-                    .as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-                let updated_ms = task
-                    .date_updated
-                    .as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-
-                if created_ms >= date_from && task.creator.id == user.id {
-                    activities.push(Activity {
-                        id: format!("{}-created", task.id),
-                        user: user.clone(),
-                        type_: "created task".to_string(),
-                        date: created_ms.to_string(),
-                        task_id: task.id.clone(),
-                        source: "api".to_string(),
-                        detail: Some(task.status.status.clone()),
-                        task_name: Some(task.name.clone()),
-                    });
-                }
-
-                let is_assignee = task.assignees.iter().any(|u| u.id == user.id);
-                if is_assignee {
-                    let done_ms = task
-                        .date_done
-                        .as_deref()
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or(0);
-                    let closed_ms = task
-                        .date_closed
-                        .as_deref()
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or(0);
-
-                    if done_ms >= date_from {
-                        activities.push(Activity {
-                            id: format!("{}-done", task.id),
-                            user: user.clone(),
-                            type_: "completed task".to_string(),
-                            date: done_ms.to_string(),
-                            task_id: task.id.clone(),
-                            source: "api".to_string(),
-                            detail: Some(task.status.status.clone()),
-                            task_name: Some(task.name.clone()),
-                        });
-                    } else if closed_ms >= date_from {
-                        activities.push(Activity {
-                            id: format!("{}-closed", task.id),
-                            user: user.clone(),
-                            type_: "closed task".to_string(),
-                            date: closed_ms.to_string(),
-                            task_id: task.id.clone(),
-                            source: "api".to_string(),
-                            detail: Some(task.status.status.clone()),
-                            task_name: Some(task.name.clone()),
-                        });
-                    } else if updated_ms >= date_from && updated_ms > created_ms {
-                        activities.push(Activity {
-                            id: format!("{}-updated", task.id),
-                            user: user.clone(),
-                            type_: "updated task".to_string(),
-                            date: updated_ms.to_string(),
-                            task_id: task.id.clone(),
-                            source: "api".to_string(),
-                            detail: Some(task.status.status.clone()),
-                            task_name: Some(task.name.clone()),
-                        });
-                    }
-                }
-
-                if updated_ms >= date_from {
-                    if let Ok(comments) = api.get_task_comments(&task.id).await {
-                        for comment in comments {
-                            if comment.user.id == user.id {
-                                if let Ok(comment_ms) = comment.date.parse::<i64>() {
-                                    if comment_ms >= date_from {
-                                        activities.push(Activity {
-                                            id: format!("{}-comment-{}", task.id, comment.id),
-                                            user: user.clone(),
-                                            type_: "commented on task".to_string(),
-                                            date: comment_ms.to_string(),
-                                            task_id: task.id.clone(),
-                                            source: "api".to_string(),
-                                            detail: Some(comment.comment_text.clone()),
-                                            task_name: Some(task.name.clone()),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    activities.sort_by(|a, b| {
-        let a_time = a.date.parse::<i64>().ok().unwrap_or(0);
-        let b_time = b.date.parse::<i64>().ok().unwrap_or(0);
-        b_time.cmp(&a_time)
-    });
+    let date_from =
+        crate::cache::ttl::now_ms() - (options.days as i64 * 24 * 3600 * 1000);
+    let activities = collect_activities(api, &cfg.folders, date_from, ActivityScope::User(user.clone())).await;
 
     spinner.stop();
 
-    if csv_flag {
+    if options.csv {
         let mut csv_content = String::new();
         // Write header
         csv_content.push_str("Date,Timestamp,User ID,User Name,Activity Type,Task ID,Task Name,Detail\n");
@@ -224,8 +111,8 @@ async fn track_user_activities<A: ClickUpApi>(
                 escape_csv_field(&act.user.username),
                 escape_csv_field(&act.type_),
                 escape_csv_field(&act.task_id),
-                escape_csv_field(&act.task_name.as_deref().unwrap_or("")),
-                escape_csv_field(&act.detail.as_deref().unwrap_or(""))
+                escape_csv_field(act.task_name.as_deref().unwrap_or("")),
+                escape_csv_field(act.detail.as_deref().unwrap_or(""))
             );
             csv_content.push_str(&row);
         }
@@ -238,7 +125,7 @@ async fn track_user_activities<A: ClickUpApi>(
         return Ok(());
     }
 
-    if json_flag {
+    if options.json {
         let json_content = serde_json::to_string_pretty(&activities)?;
         let date_str = Local::now().format("%y%m%d-%H%M%S").to_string();
         let filename = format!("{}-{}.json", user.id, date_str);
@@ -249,14 +136,17 @@ async fn track_user_activities<A: ClickUpApi>(
     }
 
     if activities.is_empty() {
-        println!("No activities found for {} in the last 10 days.", user.username);
+        println!(
+            "No activities found for {} in the last {} days.",
+            user.username, options.days
+        );
         return Ok(());
     }
 
-    let mut show_raw = raw_flag;
+    let mut show_raw = options.raw;
     let mut formatted_summary = String::new();
 
-    if summarize {
+    if options.summarize {
         let mut spinner = Spinner::start("Generating AI user activity summary");
         match GeminiSummarizer::new() {
             Ok(summarizer) => {
@@ -304,7 +194,7 @@ async fn track_user_activities<A: ClickUpApi>(
         show_raw = true;
     }
 
-    if is_menu_mode() {
+    if options.menu_mode {
         run_scrollable_tui(formatted_summary, activities, show_raw).await?;
     } else {
         if show_raw {
@@ -322,7 +212,7 @@ async fn track_user_activities<A: ClickUpApi>(
                 );
             }
         } else {
-            if markdown_flag {
+            if options.markdown {
                 println!("{}", formatted_summary);
             } else {
                 termimad::print_text(&formatted_summary);
@@ -387,14 +277,10 @@ async fn run_scrollable_tui(
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc => break,
                         KeyCode::Up | KeyCode::Char('k') => {
-                            if scroll > 0 {
-                                scroll -= 1;
-                            }
+                            scroll = scroll.saturating_sub(1);
                         }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if scroll + 5 < total_lines {
-                                scroll += 1;
-                            }
+                        KeyCode::Down | KeyCode::Char('j') if scroll + 5 < total_lines => {
+                            scroll += 1;
                         }
                         _ => {}
                     }

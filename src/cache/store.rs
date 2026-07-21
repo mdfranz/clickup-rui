@@ -132,3 +132,9 @@ impl CacheStore {
         self.dirty = true;
     }
 }
+
+impl Default for CacheStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}

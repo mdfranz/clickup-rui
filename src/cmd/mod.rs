@@ -1,3 +1,4 @@
+mod activity;
 pub mod browse;
 pub mod cache_cmd;
 pub mod clean;
@@ -17,7 +18,20 @@ use crate::app::Commands;
 use crate::clickup::api::ClickUpApi;
 use crate::util::errors::Result;
 
+#[derive(Clone, Copy, Default)]
+pub struct RouteContext {
+    pub menu_mode: bool,
+}
+
 pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Commands) -> Result<()> {
+    route_command_with_context(api, cmd, RouteContext::default()).await
+}
+
+pub async fn route_command_with_context<A: ClickUpApi + Clone + 'static>(
+    api: &A,
+    cmd: Commands,
+    context: RouteContext,
+) -> Result<()> {
     match cmd {
         Commands::Menu => {
             Box::pin(menu::run_menu(api)).await?;
@@ -46,7 +60,12 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
         Commands::Standup { all, mine } => {
             standup::run_standup(api, all, mine).await?;
         }
-        Commands::Summarize { all, team, mine, markdown } => {
+        Commands::Summarize {
+            all,
+            team,
+            mine,
+            markdown,
+        } => {
             let mine_only = if team { false } else { mine };
             summarize::run_summarize(api, all, mine_only, markdown).await?;
         }
@@ -59,17 +78,31 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
             raw,
             markdown,
         } => {
-            team_status::run_team_status(api, days, summarize, raw, markdown).await?;
+            team_status::run_team_status(api, days, summarize, raw, markdown, context.menu_mode).await?;
         }
         Commands::Track {
             user_id,
+            days,
             summarize,
             raw,
             csv,
             json,
             markdown,
         } => {
-            track::run_track(api, user_id, summarize, raw, csv, json, markdown).await?;
+            track::run_track(
+                api,
+                user_id,
+                track::TrackOptions {
+                    days,
+                    summarize,
+                    raw,
+                    csv,
+                    json,
+                    markdown,
+                    menu_mode: context.menu_mode,
+                },
+            )
+            .await?;
         }
         Commands::Cache { cmd } => match cmd {
             crate::app::CacheSubcommands::Clear => cache_cmd::run_cache_clear().await?,
@@ -79,9 +112,8 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
             provider,
             model,
             ollama_url,
-            gemini_api_key,
         } => {
-            config_cmd::run_config(provider, model, ollama_url, gemini_api_key).await?;
+            config_cmd::run_config(provider, model, ollama_url).await?;
         }
         Commands::Clean => {
             clean::run_clean().await?;

@@ -47,7 +47,7 @@ A high-performance, premium Terminal User Interface (TUI) and Command-Line Inter
 * **Setup wizard (`setup`)**: Configures your workspace, space, and folder multi-selections with live preview checklists.
 * **Daily Standup wizard (`standup`)**: Multi-select your active tasks, type updates, change statuses, and submit them in one centralized, rapid workflow.
 * **Team Status dashboard (`team-status`)**: Generates an overview of who has worked on what, with optional AI team-activity summaries.
-* **Track logs (`track`)**: Track user activities over the last 10 days and export results to timestamped CSV or JSON files.
+* **Track logs (`track`)**: Track user activities over a configurable time window and export results to timestamped CSV or JSON files.
 
 ---
 
@@ -89,7 +89,7 @@ Set up your required environment variables:
 # ClickUp Personal Access Token (Required for ClickUp operations)
 export CLICKUP_PAT="your_clickup_pat_here"
 
-# Gemini API Key (Required for the default Gemini AI provider)
+# Gemini API Key (Required for the default Gemini AI provider; never stored in config)
 export GEMINI_API_KEY="your_gemini_api_key_here" # or GOOGLE_API_KEY
 ```
 
@@ -104,6 +104,8 @@ To try the experimental local Ollama provider instead of Gemini:
 ```bash
 clickup-rui config --provider ollama --model granite4.1:8b
 ```
+
+Gemini API keys are read only from `GEMINI_API_KEY` or `GOOGLE_API_KEY`. They are not accepted by `config` and are never written to the configuration file.
 
 ---
 
@@ -120,10 +122,10 @@ clickup-rui config --provider ollama --model granite4.1:8b
 | `summarize` | AI-summarizes tasks in configured folders (supports `--markdown` / `-m`) |
 | `workload` | Opens an interactive workload view grouped by assignee |
 | `team-status` | Compiles team activities with optional AI highlights (supports `--markdown` / `-m`) |
-| `track [user]` | Tracks activity logs (supports `--csv` / `--json` export, `--summarize`, and `--markdown` / `-m`) |
+| `track [user_id]` | Tracks activity logs (default 10 days; supports `--days` / `-d`, `--csv` / `--json`, `--summarize`, and `--markdown` / `-m`) |
 | `cache info` | Details local cache store statistics and file metrics |
 | `cache clear` | Safely purges local cache file |
-| `config` | Shows or updates the AI provider, model, and Ollama URL |
+| `config` | Shows or updates the AI provider, model, and Ollama URL; Gemini keys come only from environment variables |
 | `clean` | Interactively prompts to delete configs and cache files |
 | `show` | Outputs active space, workspace, and currently authenticated user |
 
@@ -148,6 +150,30 @@ clickup-rui team-status -m
 # Track and save a user's recent daily summaries directly to a file
 clickup-rui track 111900148 --summarize -m > user_updates.md
 ```
+
+---
+
+## ⚙️ Runtime Options
+
+Global options:
+
+* `--refresh`, `-r`: Bypass cached reads for the current command.
+* `--clear-cache`: Delete the local cache before running the command.
+
+AI configuration:
+
+* `clickup-rui config`: Show the selected provider and model.
+* `clickup-rui config --provider gemini --model gemini-3.5-flash`: Use Gemini.
+* `clickup-rui config --provider ollama --model granite4.1:8b --ollama-url http://localhost:11434`: Use a local Ollama server.
+
+Logging environment variables:
+
+* `RUST_LOG`: Sets the log filter; defaults to `info`.
+* `LOG_LOCAL=1`: Writes JSON logs to `./app.log` instead of the application cache directory.
+* `LOG_RESPONSE_BODIES=1`: Includes API response bodies in logs.
+* `LOG_SENSITIVE_DATA=1`: Includes request bodies in logs.
+
+`LOG_RESPONSE_BODIES` and `LOG_SENSITIVE_DATA` can write ClickUp content to disk. Use them only for local debugging and remove the resulting logs when finished.
 
 ---
 
@@ -183,6 +209,8 @@ clickup-rui track 111900148 --summarize -m > user_updates.md
 * **Application Logs**:
   * Default: `${user_cache_dir}/clickup-tui/app.log`
   * Local project folder logging: Set `LOG_LOCAL=1` to write to `./app.log`
+
+The configuration file stores workspace, folder, and AI-provider settings only. Gemini credentials must remain in environment variables.
 
 ---
 

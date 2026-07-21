@@ -1,6 +1,5 @@
 use crate::app::Commands;
 use crate::clickup::api::ClickUpApi;
-use crate::util::env::set_menu_mode;
 use crate::util::errors::Result;
 
 fn needs_terminal_pause(cmd: &Commands) -> bool {
@@ -13,7 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
 pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
-    let menu_options = vec![
+    let menu_options = [
         (
             "Browse Interactive View",
             Commands::Browse {
@@ -27,6 +26,7 @@ pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
             "Track User Activity Logs",
             Commands::Track {
                 user_id: None,
+                days: 10,
                 summarize: false,
                 raw: false,
                 csv: false,
@@ -186,15 +186,16 @@ pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
                             // 1. Leave TUI screen temporarily
                             drop(guard);
 
-                            // 2. Set environment menu flag
-                            set_menu_mode(true);
-
-                            // 3. Determine if this command produces terminal output requiring a pause
+                            // 2. Determine if this command produces terminal output requiring a pause
                             let show_pause = needs_terminal_pause(&command_to_run);
 
-                            // 4. Execute command through router
-                            let route_res =
-                                Box::pin(crate::cmd::route_command(api, command_to_run)).await;
+                            // 3. Execute command through router
+                            let route_res = Box::pin(crate::cmd::route_command_with_context(
+                                api,
+                                command_to_run,
+                                crate::cmd::RouteContext { menu_mode: true },
+                            ))
+                            .await;
                             let had_error = if let Err(e) = route_res {
                                 println!("\nError executing command: {}\n", e);
                                 true
@@ -202,10 +203,7 @@ pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
                                 false
                             };
 
-                            // 5. Unset menu flag
-                            set_menu_mode(false);
-
-                            // 6. Pause only when terminal output was produced or an error occurred
+                            // 4. Pause only when terminal output was produced or an error occurred
                             if show_pause || had_error {
                                 println!(
                                     "\n[Press any key to return to menu, or 'q' / Ctrl+C to exit...]"
@@ -239,7 +237,7 @@ pub async fn run_menu<A: ClickUpApi + Clone + 'static>(api: &A) -> Result<()> {
                                 crossterm::terminal::enable_raw_mode()?;
                             }
 
-                            // 7. Re-enter alternate screen and clear terminal
+                            // 5. Re-enter alternate screen and clear terminal
                             guard = crate::ui::terminal::TerminalGuard::create()?;
                             guard.inner().clear()?;
                         }

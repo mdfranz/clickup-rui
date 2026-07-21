@@ -5,7 +5,6 @@ pub async fn run_config(
     provider: Option<String>,
     model: Option<String>,
     ollama_url: Option<String>,
-    gemini_api_key: Option<String>,
 ) -> Result<()> {
     let mut config = match Config::load() {
         Ok(cfg) => cfg,
@@ -15,17 +14,12 @@ pub async fn run_config(
         }
     };
 
-    if provider.is_none() && model.is_none() && ollama_url.is_none() && gemini_api_key.is_none() {
+    if provider.is_none() && model.is_none() && ollama_url.is_none() {
         println!("Current AI Configuration:");
         println!("  Provider:   {}", config.ai_provider);
         println!("  Model:      {}", config.ai_model);
         if let Some(ref url) = config.ollama_url {
             println!("  Ollama URL: {}", url);
-        }
-        if let Some(ref key) = config.gemini_api_key {
-            if !key.is_empty() {
-                println!("  Gemini Key: [configured]");
-            }
         }
         return Ok(());
     }
@@ -36,14 +30,14 @@ pub async fn run_config(
             println!("Error: Provider must be 'gemini' or 'ollama'.");
             return Ok(());
         }
-        
+
         // Auto-switch default models if using the defaults
         if p_lower == "ollama" && config.ai_model == "gemini-3.5-flash" {
             config.ai_model = "granite4.1:8b".to_string();
         } else if p_lower == "gemini" && config.ai_model == "granite4.1:8b" {
             config.ai_model = "gemini-3.5-flash".to_string();
         }
-        
+
         config.ai_provider = p_lower;
     }
 
@@ -53,14 +47,6 @@ pub async fn run_config(
 
     if let Some(u) = ollama_url {
         config.ollama_url = Some(u);
-    }
-
-    if let Some(k) = gemini_api_key {
-        if k.is_empty() {
-            config.gemini_api_key = None;
-        } else {
-            config.gemini_api_key = Some(k);
-        }
     }
 
     // Ensure ollama_url is removed if not using ollama provider
@@ -77,11 +63,6 @@ pub async fn run_config(
     println!("  Model:      {}", config.ai_model);
     if let Some(ref url) = config.ollama_url {
         println!("  Ollama URL: {}", url);
-    }
-    if let Some(ref key) = config.gemini_api_key {
-        if !key.is_empty() {
-            println!("  Gemini Key: [configured]");
-        }
     }
 
     Ok(())

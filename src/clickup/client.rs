@@ -47,6 +47,19 @@ impl ClickUpClient {
         headers
     }
 
+    fn encode_path_segment(value: &str) -> String {
+        let mut encoded = String::with_capacity(value.len());
+        for byte in value.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+                encoded.push(byte as char);
+            } else {
+                encoded.push('%');
+                encoded.push_str(&format!("{byte:02X}"));
+            }
+        }
+        encoded
+    }
+
     async fn request<T, R>(&self, method: reqwest::Method, path: &str, body: Option<&T>) -> Result<R>
     where
         T: Serialize + ?Sized,
@@ -303,13 +316,21 @@ impl ClickUpApi for ClickUpClient {
     }
 
     async fn add_tag_to_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
-        let path = format!("/task/{}/tag/{}", task_id, tag_name);
+        let path = format!(
+            "/task/{}/tag/{}",
+            task_id,
+            Self::encode_path_segment(tag_name)
+        );
         self.request::<(), serde_json::Value>(reqwest::Method::POST, &path, None::<&()>).await?;
         Ok(())
     }
 
     async fn remove_tag_from_task(&self, task_id: &str, tag_name: &str) -> Result<()> {
-        let path = format!("/task/{}/tag/{}", task_id, tag_name);
+        let path = format!(
+            "/task/{}/tag/{}",
+            task_id,
+            Self::encode_path_segment(tag_name)
+        );
         self.request::<(), serde_json::Value>(reqwest::Method::DELETE, &path, None::<&()>).await?;
         Ok(())
     }
@@ -320,6 +341,14 @@ mod tests {
     use super::*;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn test_encode_path_segment() {
+        assert_eq!(
+            ClickUpClient::encode_path_segment("Needs Review & QA/Next"),
+            "Needs%20Review%20%26%20QA%2FNext"
+        );
+    }
 
     #[tokio::test]
     async fn test_client_get_teams() {
@@ -391,4 +420,3 @@ mod tests {
         }
     }
 }
-

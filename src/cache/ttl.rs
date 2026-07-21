@@ -3,9 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const TTL_USER: i64 = 24 * 3600; // 24h
 pub const TTL_TEAMS: i64 = 4 * 3600; // 4h
 pub const TTL_SPACES: i64 = 4 * 3600; // 4h
-pub const TTL_FOLDERS: i64 = 1 * 3600; // 1h
-pub const TTL_LISTS: i64 = 1 * 3600; // 1h
-pub const TTL_LIST_DETAIL: i64 = 1 * 3600; // 1h
+pub const TTL_FOLDERS: i64 = 3600; // 1h
+pub const TTL_LISTS: i64 = 3600; // 1h
+pub const TTL_LIST_DETAIL: i64 = 3600; // 1h
 pub const TTL_WS_USERS: i64 = 4 * 3600; // 4h
 pub const TTL_TASK_DETAIL: i64 = 10 * 60; // 10m
 pub const TTL_COMMENTS: i64 = 5 * 60; // 5m

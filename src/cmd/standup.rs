@@ -452,14 +452,13 @@ async fn run_standup_loop<A: ClickUpApi>(
                                         );
                                     })?;
 
-                                    if !rep.comment.trim().is_empty() {
-                                        if api
+                                    if !rep.comment.trim().is_empty()
+                                        && api
                                             .create_task_comment(&rep.task.id, &rep.comment)
                                             .await
                                             .is_ok()
-                                        {
-                                            rep.posted_comment = true;
-                                        }
+                                    {
+                                        rep.posted_comment = true;
                                     }
 
                                     if status_changed {
