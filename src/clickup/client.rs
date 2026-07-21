@@ -82,24 +82,36 @@ impl ClickUpClient {
             String::new()
         };
 
-        tracing::debug!(
-            "Sending request: method={} url={} body={}",
-            method,
-            url,
-            request_log_body
+        tracing::info!(
+            method = %method,
+            url = %url,
+            "Sending ClickUp request"
         );
+        tracing::debug!(method = %method, url = %url, body = %request_log_body, "ClickUp request body");
 
         let start = Instant::now();
-        let res = builder.send().await?;
+        let res = match builder.send().await {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(
+                    method = %method,
+                    url = %url,
+                    latency_ms = start.elapsed().as_millis(),
+                    error = %error,
+                    "ClickUp request failed"
+                );
+                return Err(error.into());
+            }
+        };
         let elapsed = start.elapsed();
 
         let status = res.status();
-        tracing::debug!(
-            "Received response: method={} url={} status={} latency={:?}",
-            method,
-            url,
-            status,
-            elapsed
+        tracing::info!(
+            method = %method,
+            url = %url,
+            status = %status,
+            latency_ms = elapsed.as_millis(),
+            "Received ClickUp response"
         );
 
         if !status.is_success() {

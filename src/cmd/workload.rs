@@ -23,6 +23,14 @@ enum WorkloadPane {
     Detail,
 }
 
+fn pane_title_style(is_active: bool) -> Style {
+    if is_active {
+        crate::ui::styles::style_selected()
+    } else {
+        Style::default().fg(crate::ui::styles::COLOR_MUTED)
+    }
+}
+
 struct MemberWorkload {
     username: String,
     tasks: Vec<Task>,
@@ -194,14 +202,40 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
     let mut loading_tasks = HashSet::<String>::new();
 
     loop {
-        let member_idx = member_state.selected().unwrap_or(0);
-        let member_username = members[member_idx].username.clone();
-
-        let filtered_tasks: Vec<Task> = members[member_idx].tasks
+        let visible_member_indices: Vec<usize> = members
             .iter()
-            .filter(|t| !excluded_statuses.contains(&t.status.status.to_lowercase()))
-            .cloned()
+            .enumerate()
+            .filter_map(|(idx, member)| {
+                member
+                    .tasks
+                    .iter()
+                    .any(|task| !excluded_statuses.contains(&task.status.status.to_lowercase()))
+                    .then_some(idx)
+            })
             .collect();
+        let member_idx = if visible_member_indices.is_empty() {
+            member_state.select(None);
+            None
+        } else {
+            let selected = member_state
+                .selected()
+                .unwrap_or(0)
+                .min(visible_member_indices.len() - 1);
+            member_state.select(Some(selected));
+            Some(visible_member_indices[selected])
+        };
+        let member_username = member_idx.map(|idx| members[idx].username.clone());
+
+        let filtered_tasks: Vec<Task> = member_idx
+            .map(|idx| {
+                members[idx]
+                    .tasks
+                    .iter()
+                    .filter(|task| !excluded_statuses.contains(&task.status.status.to_lowercase()))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let task_idx = task_state.selected().unwrap_or(0).min(filtered_tasks.len().saturating_sub(1));
         if !filtered_tasks.is_empty() {
@@ -282,22 +316,20 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             } else {
                 crate::ui::styles::style_border_inactive()
             };
-            let empty_msg = if members[member_idx].tasks.is_empty() {
-                "   No tasks for this member."
-            } else {
-                "   No tasks match the current filter."
-            };
             detail_widget = Paragraph::new(vec![
                 Line::from(""),
                 Line::from(vec![Span::styled(
-                    empty_msg,
+                    "   No tasks match the current filter.",
                     Style::default().fg(crate::ui::styles::COLOR_MUTED),
                 )]),
             ])
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" Task Detail ")
+                    .title(Line::from(Span::styled(
+                        " Task Detail ",
+                        pane_title_style(active_pane == WorkloadPane::Detail),
+                    )))
                     .border_style(detail_border),
             )
             .style(
@@ -459,7 +491,10 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
-                                .title(title)
+                                .title(Line::from(Span::styled(
+                                    title,
+                                    pane_title_style(active_pane == WorkloadPane::Detail),
+                                )))
                                 .border_style(detail_border),
                         )
                         .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
@@ -486,7 +521,10 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
-                                .title(" Loading Task ")
+                                .title(Line::from(Span::styled(
+                                    " Loading Task ",
+                                    pane_title_style(active_pane == WorkloadPane::Detail),
+                                )))
                                 .border_style(detail_border),
                         )
                         .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
@@ -526,9 +564,10 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             };
 
             // Members pane
-            let member_items: Vec<ListItem> = members
+            let member_items: Vec<ListItem> = visible_member_indices
                 .iter()
-                .map(|m| {
+                .map(|&idx| {
+                    let m = &members[idx];
                     let shown = m.tasks.iter()
                         .filter(|t| !excluded_statuses.contains(&t.status.status.to_lowercase()))
                         .count();
@@ -552,7 +591,10 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(" Team Members ")
+                        .title(Line::from(Span::styled(
+                            " Team Members ",
+                            pane_title_style(active_pane == WorkloadPane::Members),
+                        )))
                         .border_style(members_border),
                 )
                 .highlight_style(crate::ui::styles::style_selected());
@@ -560,7 +602,6 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
             f.render_stateful_widget(member_list, chunks[0], &mut member_state);
 
             // Tasks pane for selected member
-            let current_member = &members[member_state.selected().unwrap_or(0)];
             let task_items: Vec<ListItem> = filtered_tasks
                 .iter()
                 .map(|t| {
@@ -589,17 +630,25 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                 .collect();
 
             let shown = filtered_tasks.len();
-            let total = current_member.tasks.len();
-            let tasks_title = if shown == total {
-                format!(" {} Tasks ({}) ", current_member.username, total)
+            let tasks_title = if let Some(idx) = member_idx {
+                let current_member = &members[idx];
+                let total = current_member.tasks.len();
+                if shown == total {
+                    format!(" {} Tasks ({}) ", current_member.username, total)
+                } else {
+                    format!(" {} Tasks ({}/{}) ", current_member.username, shown, total)
+                }
             } else {
-                format!(" {} Tasks ({}/{}) ", current_member.username, shown, total)
+                " Tasks ".to_string()
             };
             let task_list = RatatuiList::new(task_items)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(tasks_title)
+                        .title(Line::from(Span::styled(
+                            tasks_title,
+                            pane_title_style(active_pane == WorkloadPane::Tasks),
+                        )))
                         .border_style(tasks_border),
                 )
                 .highlight_style(crate::ui::styles::style_selected());
@@ -826,7 +875,9 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                                     {
                                         cached_task_details.lock().unwrap().remove(&task_id);
                                         loading_tasks.remove(&task_id);
-                                        if let Some(m) = members.iter_mut().find(|m| m.username == member_username) {
+                                        if let Some(m) = members.iter_mut().find(|m| {
+                                            Some(&m.username) == member_username.as_ref()
+                                        }) {
                                             if let Some(t) = m.tasks.iter_mut().find(|t| t.id == task_id) {
                                                 t.status.status = selected_stat.status.clone();
                                             }
@@ -1093,7 +1144,7 @@ async fn run_workload_loop<A: ClickUpApi + Clone + 'static>(
                         KeyCode::Down | KeyCode::Char('j') => match active_pane {
                             WorkloadPane::Members => {
                                 let idx = member_state.selected().unwrap_or(0);
-                                if idx + 1 < members.len() {
+                                if idx + 1 < visible_member_indices.len() {
                                     member_state.select(Some(idx + 1));
                                     task_state.select(Some(0));
                                     right_scroll = 0;

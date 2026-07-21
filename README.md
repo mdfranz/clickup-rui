@@ -48,6 +48,7 @@ A Terminal User Interface (TUI) and Command-Line Interface (CLI) client for **Cl
 * **Daily Standup wizard (`standup`)**: Multi-select your active tasks, type updates, change statuses, and submit them in one centralized, rapid workflow.
 * **Team Status dashboard (`team-status`)**: Generates an overview of who has worked on what, with optional AI team-activity summaries.
 * **Track logs (`track`)**: Track user activities over a configurable time window and export results to timestamped CSV or JSON files.
+* **Workload dashboard (`workload`)**: Provides an interactive 3-pane dashboard grouped by assignee, featuring active pane title highlighting, live status filters (`f`), in-place commenting (`c`), status updates (`s`), and tag management (`t`).
 
 ---
 
@@ -168,10 +169,11 @@ AI configuration:
 
 Logging environment variables:
 
-* `RUST_LOG`: Sets the log filter; defaults to `info`.
-* `LOG_LOCAL=1`: Writes JSON logs to `./app.log` instead of the application cache directory.
+* `RUST_LOG`: Sets the log filter; defaults to `debug`.
 * `LOG_RESPONSE_BODIES=1`: Includes API response bodies in logs.
 * `LOG_SENSITIVE_DATA=1`: Includes request bodies in logs.
+
+Every run writes JSON logs to `./app.log`. ClickUp requests and responses include their method, URL, status, and latency. Use `tail -f app.log` in another terminal to inspect them.
 
 `LOG_RESPONSE_BODIES` and `LOG_SENSITIVE_DATA` can write ClickUp content to disk. Use them only for local debugging and remove the resulting logs when finished.
 
@@ -186,6 +188,17 @@ Logging environment variables:
 * **Status Picker**: Press `s` to open status menu -> Arrow keys -> `Enter` to set / `Esc` to cancel
 * **New Task Wizard**: Press `n` to launch
 * **Task Reload**: Press `r` to refresh details and comments for the current task
+* **Exit**: `Esc` or `q`
+
+### Workload View (`workload`)
+* **Focus Switch**: `Tab` / `BackTab` / `h` / `l` / `Left` / `Right` to move focus between Team Members, Tasks, and Task Detail panes
+* **Navigate Lists / Scroll Details**: `Up` / `Down` or `j` / `k` (contextual to the active pane)
+* **Status Filter**: Press `f` to select/toggle which task statuses to display
+* **Comment Editor**: Press `c` to open comment overlay -> Type -> `Ctrl+s` to save / `Esc` to cancel (Tasks pane active)
+* **Status Picker**: Press `s` to open status menu -> Arrow keys -> `Enter` to set / `Esc` to cancel (Tasks pane active)
+* **Tag Picker**: Press `t` to open space tag menu -> Arrow keys -> `Space` to toggle -> `Enter` to set / `Esc` to cancel (Tasks pane active)
+* **New Task Wizard**: Press `n` to launch
+* **Task Reload**: Press `r` to refresh details and comments for the current task (Tasks pane active)
 * **Exit**: `Esc` or `q`
 
 ### Stateful Picker (Assignee Selection)
@@ -207,8 +220,7 @@ Logging environment variables:
   * `${user_cache_dir}/clickup-tui/cache.json`
   * Temp directory fallback: `/tmp/clickup-tui/cache.json`
 * **Application Logs**:
-  * Default: `${user_cache_dir}/clickup-tui/app.log`
-  * Local project folder logging: Set `LOG_LOCAL=1` to write to `./app.log`
+  * `./app.log` in the directory where `clickup-rui` is run
 
 The configuration file stores workspace, folder, and AI-provider settings only. Gemini credentials must remain in environment variables.
 

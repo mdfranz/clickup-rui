@@ -45,17 +45,5 @@ pub fn get_cache_path() -> PathBuf {
 }
 
 pub fn get_log_path() -> PathBuf {
-    if crate::util::env::is_log_local() {
-        PathBuf::from("app.log")
-    } else if let Some(cache_dir) = dirs::cache_dir() {
-        let mut p = cache_dir;
-        p.push("clickup-tui");
-        p.push("app.log");
-        p
-    } else {
-        let mut p = env::temp_dir();
-        p.push("clickup-tui");
-        p.push("app.log");
-        p
-    }
+    PathBuf::from("app.log")
 }

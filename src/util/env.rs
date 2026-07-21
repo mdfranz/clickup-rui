@@ -15,10 +15,6 @@ pub fn get_gemini_api_key() -> Result<String> {
         })
 }
 
-pub fn is_log_local() -> bool {
-    env::var("LOG_LOCAL").map(|v| v == "1").unwrap_or(false)
-}
-
 pub fn is_log_response_bodies() -> bool {
     env::var("LOG_RESPONSE_BODIES").map(|v| v == "1").unwrap_or(false)
 }
