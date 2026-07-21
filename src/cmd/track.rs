@@ -258,39 +258,45 @@ async fn track_user_activities<A: ClickUpApi>(
 
     if summarize {
         let mut spinner = Spinner::start("Generating AI user activity summary");
-        let summarizer = GeminiSummarizer::new();
+        match GeminiSummarizer::new() {
+            Ok(summarizer) => {
+                let mut daily_groups: HashMap<String, Vec<Activity>> = HashMap::new();
+                for act in &activities {
+                    let ms = act.date.parse::<i64>().unwrap_or(0);
+                    if let Some(dt) = DateTime::from_timestamp_millis(ms) {
+                        let local_dt: DateTime<Local> = dt.into();
+                        let day_str = local_dt.format("%Y-%m-%d").to_string();
+                        daily_groups.entry(day_str).or_default().push(act.clone());
+                    }
+                }
 
-        let mut daily_groups: HashMap<String, Vec<Activity>> = HashMap::new();
-        for act in &activities {
-            let ms = act.date.parse::<i64>().unwrap_or(0);
-            if let Some(dt) = DateTime::from_timestamp_millis(ms) {
-                let local_dt: DateTime<Local> = dt.into();
-                let day_str = local_dt.format("%Y-%m-%d").to_string();
-                daily_groups.entry(day_str).or_default().push(act.clone());
+                let mut days_sorted: Vec<String> = daily_groups.keys().cloned().collect();
+                days_sorted.sort_by(|a, b| b.cmp(a));
+
+                let mut daily_summaries = Vec::new();
+                for day in days_sorted {
+                    let day_activities = daily_groups.get(&day).unwrap();
+                    match summarizer
+                        .summarize_user_activity(&user.username, &day, day_activities, &[], &[])
+                        .await
+                    {
+                        Ok(summary) => {
+                            daily_summaries.push(format!("### {}\n\n{}", day, summary));
+                        }
+                        Err(e) => {
+                            println!("Error summarizing for {}: {}", day, e);
+                            show_raw = true;
+                        }
+                    }
+                }
+
+                formatted_summary = daily_summaries.join("\n\n");
+            }
+            Err(e) => {
+                println!("AI Summary failed: {}. Falling back to raw.", e);
+                show_raw = true;
             }
         }
-
-        let mut days_sorted: Vec<String> = daily_groups.keys().cloned().collect();
-        days_sorted.sort_by(|a, b| b.cmp(a));
-
-        let mut daily_summaries = Vec::new();
-        for day in days_sorted {
-            let day_activities = daily_groups.get(&day).unwrap();
-            match summarizer
-                .summarize_user_activity(&user.username, &day, day_activities, &[], &[])
-                .await
-            {
-                Ok(summary) => {
-                    daily_summaries.push(format!("### {}\n\n{}", day, summary));
-                }
-                Err(e) => {
-                    println!("Error summarizing for {}: {}", day, e);
-                    show_raw = true;
-                }
-            }
-        }
-
-        formatted_summary = daily_summaries.join("\n\n");
         spinner.stop();
     }
 

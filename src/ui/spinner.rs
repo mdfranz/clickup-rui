@@ -18,14 +18,14 @@ impl Spinner {
             let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             let mut i = 0;
             while running_clone.load(Ordering::Relaxed) {
-                print!("\r\x1B[35m{}\x1B[0m {} ", frames[i % frames.len()], message);
-                let _ = std::io::stdout().flush();
+                eprint!("\r\x1B[35m{}\x1B[0m {} ", frames[i % frames.len()], message);
+                let _ = std::io::stderr().flush();
                 i += 1;
                 sleep(Duration::from_millis(80)).await;
             }
             // Clear the line when done
-            print!("\r\x1B[K");
-            let _ = std::io::stdout().flush();
+            eprint!("\r\x1B[K");
+            let _ = std::io::stderr().flush();
         });
 
         Self {
@@ -40,8 +40,8 @@ impl Spinner {
                 handle.abort();
             }
             // Clear the line when done
-            print!("\r\x1B[K");
-            let _ = std::io::stdout().flush();
+            eprint!("\r\x1B[K");
+            let _ = std::io::stderr().flush();
         }
     }
 }

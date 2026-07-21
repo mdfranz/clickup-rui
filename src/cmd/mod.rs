@@ -79,8 +79,9 @@ pub async fn route_command<A: ClickUpApi + Clone + 'static>(api: &A, cmd: Comman
             provider,
             model,
             ollama_url,
+            gemini_api_key,
         } => {
-            config_cmd::run_config(provider, model, ollama_url).await?;
+            config_cmd::run_config(provider, model, ollama_url, gemini_api_key).await?;
         }
         Commands::Clean => {
             clean::run_clean().await?;

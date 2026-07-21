@@ -12,7 +12,7 @@ pub async fn run_summarize<A: ClickUpApi>(
     markdown_flag: bool,
 ) -> Result<()> {
     let cfg = Config::load()?;
-    let summarizer = GeminiSummarizer::new();
+    let summarizer = GeminiSummarizer::new()?;
 
     let mut spinner = Spinner::start("Fetching current user");
     let user = api.get_current_user().await?;

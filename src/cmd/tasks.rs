@@ -24,7 +24,7 @@ pub async fn run_tasks<A: ClickUpApi>(
     let user = api.get_current_user().await?;
     spinner.stop();
 
-    let summarizer = GeminiSummarizer::new();
+    let summarizer = GeminiSummarizer::new()?;
 
     for folder in &cfg.folders {
         println!("\x1B[1mFolder: {}\x1B[0m", folder.name);

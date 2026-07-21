@@ -274,10 +274,10 @@ async fn run_setup_loop<A: ClickUpApi>(
                                     // At least one folder should be selected ideally, or allow empty but warn
                                 }
 
-                                let (ai_provider, ai_model, mut ollama_url) = if let Ok(existing) = Config::load() {
-                                     (existing.ai_provider, existing.ai_model, existing.ollama_url)
+                                let (ai_provider, ai_model, mut ollama_url, gemini_api_key) = if let Ok(existing) = Config::load() {
+                                     (existing.ai_provider, existing.ai_model, existing.ollama_url, existing.gemini_api_key)
                                  } else {
-                                     ("gemini".to_string(), "gemini-3.5-flash".to_string(), None)
+                                     ("gemini".to_string(), "gemini-3.5-flash".to_string(), None, None)
                                  };
 
                                  if ai_provider != "ollama" {
@@ -293,6 +293,7 @@ async fn run_setup_loop<A: ClickUpApi>(
                                      ai_provider,
                                      ai_model,
                                      ollama_url,
+                                     gemini_api_key,
                                  };
                                  cfg.save()?;
 

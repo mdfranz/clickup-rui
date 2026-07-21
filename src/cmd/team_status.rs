@@ -159,15 +159,22 @@ pub async fn run_team_status<A: ClickUpApi>(
 
     if summarize {
         let mut spinner = Spinner::start("Generating AI team summary");
-        let summarizer = GeminiSummarizer::new();
-        let user_activities: Vec<(String, Vec<Activity>)> = grouped.into_iter().collect();
+        match GeminiSummarizer::new() {
+            Ok(summarizer) => {
+                let user_activities: Vec<(String, Vec<Activity>)> = grouped.into_iter().collect();
 
-        match summarizer
-            .summarize_team_activity(days, &user_activities, &[])
-            .await
-        {
-            Ok(summary) => {
-                formatted_summary = summary;
+                match summarizer
+                    .summarize_team_activity(days, &user_activities, &[])
+                    .await
+                {
+                    Ok(summary) => {
+                        formatted_summary = summary;
+                    }
+                    Err(e) => {
+                        println!("AI Summary failed: {}. Falling back to raw.", e);
+                        show_raw = true;
+                    }
+                }
             }
             Err(e) => {
                 println!("AI Summary failed: {}. Falling back to raw.", e);

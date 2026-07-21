@@ -61,25 +61,16 @@ pub struct AiSummarizer {
 pub type GeminiSummarizer = AiSummarizer;
 
 impl AiSummarizer {
-    pub fn new() -> Self {
-        let config = Config::load().unwrap_or_else(|_| Config {
-            workspace_id: String::new(),
-            workspace_name: String::new(),
-            space_id: String::new(),
-            space_name: String::new(),
-            folders: vec![],
-            ai_provider: "gemini".to_string(),
-            ai_model: "gemini-3.5-flash".to_string(),
-            ollama_url: Some("http://localhost:11434".to_string()),
-        });
+    pub fn new() -> Result<Self> {
+        let config = Config::load()?;
 
-        Self {
+        Ok(Self {
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
-                .unwrap_or_else(|_| Client::new()),
+                .expect("Failed to build reqwest client"),
             config,
-        }
+        })
     }
 
     fn get_effective_model(&self) -> &str {
@@ -116,7 +107,15 @@ impl AiSummarizer {
                 Ok(resp_body.response.trim().to_string())
             }
             _ => {
-                let key = get_gemini_api_key()?;
+                let key = if let Some(ref k) = self.config.gemini_api_key {
+                    if !k.is_empty() {
+                        k.clone()
+                    } else {
+                        get_gemini_api_key()?
+                    }
+                } else {
+                    get_gemini_api_key()?
+                };
                 let model = self.get_effective_model();
                 let url = format!(
                     "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",

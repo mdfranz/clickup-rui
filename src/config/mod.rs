@@ -39,6 +39,9 @@ pub struct Config {
 
     #[serde(default = "default_ollama_url", skip_serializing_if = "Option::is_none")]
     pub ollama_url: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gemini_api_key: Option<String>,
 }
 
 impl Config {
@@ -128,6 +131,7 @@ mod tests {
             ai_provider: default_ai_provider(),
             ai_model: default_ai_model(),
             ollama_url: default_ollama_url(),
+            gemini_api_key: None,
         };
 
         // Save
@@ -145,6 +149,7 @@ mod tests {
         assert_eq!(loaded.ai_provider, "gemini");
         assert_eq!(loaded.ai_model, "gemini-3.5-flash");
         assert_eq!(loaded.ollama_url, Some("http://localhost:11434".to_string()));
+        assert!(loaded.gemini_api_key.is_none());
 
         // Clean up env
         match original_xdg {
@@ -180,6 +185,7 @@ mod tests {
             ai_provider: default_ai_provider(),
             ai_model: default_ai_model(),
             ollama_url: default_ollama_url(),
+            gemini_api_key: None,
         };
 
         let content = toml::to_string_pretty(&cfg).unwrap();

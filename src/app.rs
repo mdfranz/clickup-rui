@@ -141,6 +141,9 @@ pub enum Commands {
 
         #[arg(long, help = "Ollama server URL (defaults to http://localhost:11434)")]
         ollama_url: Option<String>,
+
+        #[arg(long, help = "Gemini API key")]
+        gemini_api_key: Option<String>,
     },
     #[command(about = "Interactive delete prompt for configuration and cache files")]
     Clean,

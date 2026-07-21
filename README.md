@@ -2,7 +2,7 @@
 
 A high-performance, premium Terminal User Interface (TUI) and Command-Line Interface (CLI) client for **ClickUp**, engineered from the ground up in Rust. Ported from my [original golang tool](https://github.com/mdfranz/clickup-tui)
 
-`clickup-rui` provides an extremely polished, high-density dashboard, interactive wizards, real-time searchable user pickers, offline caching semantics, and advanced AI-powered task/team summarization powered by Gemini.
+`clickup-rui` provides a high-density dashboard, interactive wizards, searchable user pickers, resilient local caching, and AI-powered task and team summaries. Gemini is the default and most-tested AI provider; experimental local Ollama support is also available.
 
 ---
 
@@ -28,15 +28,16 @@ A high-performance, premium Terminal User Interface (TUI) and Command-Line Inter
 
 ### 3. Adaptive Main Menu
 * Launches via the `menu` command with centered ClickUp ASCII-art banners.
-* Dynamic geometry adjustments: adapts margins and switches to a high-density flat layout on small terminals to eliminate clipping and ensure all 8 navigation options remain fully visible.
+* Dynamic geometry adjustments: adapts margins and switches to a high-density flat layout on small terminals to keep all menu options visible.
 
 ### 4. Advanced Caching & Offline Support
 * Core database backed by `${user_cache_dir}/clickup-tui/cache.json` with robust TTL validation.
 * **Incremental Fetching & Merging**: Minimizes API requests by performing delta queries using updated-at high-water marks and merging incoming payloads seamlessly.
-* **Resilient Fallbacks**: If the ClickUp API is unreachable, `clickup-rui` automatically drops back to stale cache entries instead of crashing, ensuring uninterrupted reading.
+* **Resilient Fallbacks**: When cached data is available and the ClickUp API is unreachable, `clickup-rui` falls back to stale cache entries for supported reads.
 
-### 5. AI Summarization (Gemini-Powered)
-* Seamlessly connects to Google/Gemini API to perform conciseness-targeted, factual summarizations for:
+### 5. AI Summarization (Gemini by Default)
+* Gemini is the default and most-tested provider for concise, factual summaries. Experimental local Ollama support can be configured with `clickup-rui config --provider ollama`.
+* Summarizes:
   * Full tasks (including description & comments).
   * Folder task sets.
   * User activity logs (grouped daily).
@@ -46,7 +47,7 @@ A high-performance, premium Terminal User Interface (TUI) and Command-Line Inter
 * **Setup wizard (`setup`)**: Configures your workspace, space, and folder multi-selections with live preview checklists.
 * **Daily Standup wizard (`standup`)**: Multi-select your active tasks, type updates, change statuses, and submit them in one centralized, rapid workflow.
 * **Team Status dashboard (`team-status`)**: Generates an overview of who has worked on what, with optional AI team-activity summaries.
-* **Track logs (`track`)**: Track user activities over the last 10 days with optional `--csv` and `--json` pretty-print exporters.
+* **Track logs (`track`)**: Track user activities over the last 10 days and export results to timestamped CSV or JSON files.
 
 ---
 
@@ -88,7 +89,7 @@ Set up your required environment variables:
 # ClickUp Personal Access Token (Required for ClickUp operations)
 export CLICKUP_PAT="your_clickup_pat_here"
 
-# Gemini API Key (Required for AI Summaries)
+# Gemini API Key (Required for the default Gemini AI provider)
 export GEMINI_API_KEY="your_gemini_api_key_here" # or GOOGLE_API_KEY
 ```
 
@@ -96,6 +97,12 @@ Then, run the setup wizard to generate your local configurations:
 
 ```bash
 cargo run --release -- setup
+```
+
+To try the experimental local Ollama provider instead of Gemini:
+
+```bash
+clickup-rui config --provider ollama --model granite4.1:8b
 ```
 
 ---
@@ -111,10 +118,12 @@ cargo run --release -- setup
 | `new` | Runs the wizard to create a new task with a searchable assignee picker |
 | `standup` | Launches the rapid daily standup wizard |
 | `summarize` | AI-summarizes tasks in configured folders (supports `--markdown` / `-m`) |
+| `workload` | Opens an interactive workload view grouped by assignee |
 | `team-status` | Compiles team activities with optional AI highlights (supports `--markdown` / `-m`) |
 | `track [user]` | Tracks activity logs (supports `--csv` / `--json` export, `--summarize`, and `--markdown` / `-m`) |
 | `cache info` | Details local cache store statistics and file metrics |
 | `cache clear` | Safely purges local cache file |
+| `config` | Shows or updates the AI provider, model, and Ollama URL |
 | `clean` | Interactively prompts to delete configs and cache files |
 | `show` | Outputs active space, workspace, and currently authenticated user |
 
@@ -179,7 +188,7 @@ clickup-rui track 111900148 --summarize -m > user_updates.md
 
 ## 🧪 Testing
 
-To run the robust test suite (covering cache behavior, model deserialization, filtering, sorting, and API integrations):
+To run the test suite, including cache behavior, ClickUp response deserialization, formatting, and mocked API-client coverage:
 
 ```bash
 cargo test
