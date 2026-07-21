@@ -6,3 +6,4 @@
 
 # Documentation
 - Keep README.md and PKG.md up to date as you make changes
+- Never use `file:///` references. Always use relative markdown links 

@@ -1,8 +1,14 @@
 # clickup-rui ⚡
 
-A Terminal User Interface (TUI) and Command-Line Interface (CLI) client for **ClickUp**, implemented in Rust. Ported from my [original golang tool](https://github.com/mdfranz/clickup-tui)
+A Terminal User Interface (TUI) and Command-Line Interface (CLI) client for **ClickUp**, implemented in Rust. 
+
+Ported from my [original golang tool](https://github.com/mdfranz/clickup-tui)
 
 `clickup-rui` provides a high-density dashboard, interactive wizards, searchable user pickers, resilient local caching, and AI-powered task and team summaries. Gemini is the default and most-tested AI provider; experimental local Ollama support is also available.
+
+See also:
+* [External Dependencies & Library Classifications](PKG.md)
+* [Project Backlog & Known Issues](ISSUES.md)
 
 ---
 
