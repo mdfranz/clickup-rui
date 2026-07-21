@@ -31,7 +31,6 @@ All P1 items resolved on 2026-06-11.
 | # | Task | LOE | Risk | Notes |
 |---|------|-----|------|-------|
 | 7 | Implement `TerminalGuard` RAII struct (Drop restores raw-mode + alt-screen) — replace ~6 copies of TUI setup/teardown boilerplate | L | Med | ✅ Done — safely manages TUI state, preventing terminal corruption on panics and eliminating setup/teardown boilerplate in `browse.rs`, `standup.rs`, `new_task.rs`, `menu.rs`, `setup.rs`, and `track.rs` |
-
 | 8 | Remove dev chain-of-thought comments from `standup.rs:401-424`; port `task_list_map` from `browse.rs:65` to fix O(folders×lists×tasks) search | M | Med | Shipped AI reasoning left as source comments |
 | 9 | Extract shared `collect_activities()` helper — activity pipeline duplicated between `track.rs:67-200` and `team_status.rs:12-140` | M | Med | ✅ Done — shared collector keeps team/user attribution policies explicit |
 | 10 | Extract `wrap_text_by_chars` to `src/ui/` — currently duplicated in `browse.rs:673`, `standup.rs:496`, `new_task.rs:659` | S | Low | Pure function, no side effects |
