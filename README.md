@@ -1,6 +1,6 @@
 # clickup-rui ⚡
 
-A high-performance, premium Terminal User Interface (TUI) and Command-Line Interface (CLI) client for **ClickUp**, engineered from the ground up in Rust. Ported from my [original golang tool](https://github.com/mdfranz/clickup-tui)
+A Terminal User Interface (TUI) and Command-Line Interface (CLI) client for **ClickUp**, implemented in Rust. Ported from my [original golang tool](https://github.com/mdfranz/clickup-tui)
 
 `clickup-rui` provides a high-density dashboard, interactive wizards, searchable user pickers, resilient local caching, and AI-powered task and team summaries. Gemini is the default and most-tested AI provider; experimental local Ollama support is also available.
 
@@ -12,27 +12,27 @@ A high-performance, premium Terminal User Interface (TUI) and Command-Line Inter
 * **Dual-Pane Border Highlighting**: Focus toggles dynamically between the left task list and the right details panel.
   * `Tab` / `BackTab` acts as a quick focus switcher.
   * Directional arrows (`Left` / `Right` or `h` / `l`) act as explicit focus navigation keys.
-  * Active pane glows with ClickUp Purple, while inactive elements remain elegantly muted.
+  * Active pane is styled with a purple border, while inactive elements use a dimmed color scheme.
 * **High-Density Design**:
-  * Perfectly balanced `50/50` layout split.
-  * High-density brackets with formatted date prefixes (`[MM/DD]`), left-aligned fixed-width status labels (`[IN PROGRESS]`), and task names. All elements align perfectly horizontally.
+  * Balanced `50/50` layout split.
+  * High-density brackets with formatted date prefixes (`[MM/DD]`), left-aligned fixed-width status labels (`[IN PROGRESS]`), and task names. All elements are horizontally aligned.
   * Vertical list space compressed to **2 lines per item** (a 33% footprint reduction).
-* **Word-Wrapped Details & Scrolling**: Long descriptions and comments automatically wrap (`Wrap { trim: true }`) to perfectly fit the viewport. Focus the right pane to scroll using standard direction keys.
+* **Word-Wrapped Details & Scrolling**: Long descriptions and comments wrap (`Wrap { trim: true }`) to fit within the viewport width. Focus the right pane to scroll using standard direction keys.
 
 ### 2. Stateful, Searchable User Pickers
 * Integrated into both the `track` command and the **New Task Assignee Selection** wizard.
 * **Real-time Query Filtering**: Instantly filters your ClickUp workspace users by name or email as you type.
-* **Dynamic Typing Cursor**: Displays a natural visible cursor in the Filter box that advances fluidly with every typed character.
+* **Dynamic Typing Cursor**: Displays a cursor in the Filter box that updates position as characters are typed.
 * **Clamped Safe State**: Automatically keeps selection bounds safe when list sizes shrink dynamically.
-* **Retained "Unassigned" Option**: Kept securely at index 0 so users can leave tasks unassigned at any point.
+* **Retained "Unassigned" Option**: Positioned at index 0 so users can leave tasks unassigned at any point.
 
 ### 3. Adaptive Main Menu
 * Launches via the `menu` command with centered ClickUp ASCII-art banners.
 * Dynamic geometry adjustments: adapts margins and switches to a high-density flat layout on small terminals to keep all menu options visible.
 
-### 4. Advanced Caching & Offline Support
-* Core database backed by `${user_cache_dir}/clickup-tui/cache.json` with robust TTL validation.
-* **Incremental Fetching & Merging**: Minimizes API requests by performing delta queries using updated-at high-water marks and merging incoming payloads seamlessly.
+### 4. Local Caching & Offline Support
+* Core database backed by `${user_cache_dir}/clickup-tui/cache.json` with TTL-based validation.
+* **Incremental Fetching & Merging**: Minimizes API requests by performing delta queries using updated-at high-water marks and merging incoming payloads.
 * **Resilient Fallbacks**: When cached data is available and the ClickUp API is unreachable, `clickup-rui` falls back to stale cache entries for supported reads.
 
 ### 5. AI Summarization (Gemini by Default)
@@ -116,7 +116,7 @@ Gemini API keys are read only from `GEMINI_API_KEY` or `GOOGLE_API_KEY`. They ar
 | `menu` | Launches the interactive, full-screen main command picker |
 | `setup` | Runs the 3-step setup wizard (Workspace -> Space -> Folder selection) |
 | `tasks` | Lists current tasks from configured folders |
-| `browse` | Launches the premium interactive dual-pane task dashboard |
+| `browse` | Launches the interactive dual-pane task dashboard |
 | `new` | Runs the wizard to create a new task with a searchable assignee picker |
 | `standup` | Launches the rapid daily standup wizard |
 | `summarize` | AI-summarizes tasks in configured folders (supports `--markdown` / `-m`) |
