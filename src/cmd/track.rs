@@ -1,7 +1,7 @@
 use crate::ai::summarizer::GeminiSummarizer;
-use crate::cmd::activity::{collect_activities, ActivityScope};
 use crate::clickup::api::ClickUpApi;
 use crate::clickup::models::{Activity, User};
+use crate::cmd::activity::{collect_activities, ActivityScope};
 use crate::config::Config;
 use crate::ui::spinner::Spinner;
 use crate::util::errors::Result;
@@ -66,12 +66,7 @@ pub async fn run_track<A: ClickUpApi>(
         }
     };
 
-    track_user_activities(
-        api,
-        target_user,
-        &options,
-    )
-    .await?;
+    track_user_activities(api, target_user, &options).await?;
     Ok(())
 }
 
@@ -83,16 +78,22 @@ async fn track_user_activities<A: ClickUpApi>(
     let mut spinner = Spinner::start("Fetching user activity logs");
     let cfg = Config::load()?;
 
-    let date_from =
-        crate::cache::ttl::now_ms() - (options.days as i64 * 24 * 3600 * 1000);
-    let activities = collect_activities(api, &cfg.folders, date_from, ActivityScope::User(user.clone())).await;
+    let date_from = crate::cache::ttl::now_ms() - (options.days as i64 * 24 * 3600 * 1000);
+    let activities = collect_activities(
+        api,
+        &cfg.folders,
+        date_from,
+        ActivityScope::User(user.clone()),
+    )
+    .await;
 
     spinner.stop();
 
     if options.csv {
         let mut csv_content = String::new();
         // Write header
-        csv_content.push_str("Date,Timestamp,User ID,User Name,Activity Type,Task ID,Task Name,Detail\n");
+        csv_content
+            .push_str("Date,Timestamp,User ID,User Name,Activity Type,Task ID,Task Name,Detail\n");
 
         for act in &activities {
             let ms = act.date.parse::<i64>().unwrap_or(0);
@@ -353,8 +354,7 @@ async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
                 crate::ui::styles::style_title(),
             );
             f.render_widget(
-                Paragraph::new(Line::from(vec![title_span]))
-                    .alignment(Alignment::Center),
+                Paragraph::new(Line::from(vec![title_span])).alignment(Alignment::Center),
                 chunks[0],
             );
 
@@ -366,9 +366,11 @@ async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
                 .padding(Padding::new(2, 2, 1, 1));
 
             f.render_widget(
-                Paragraph::new(filter.as_str())
-                    .block(search_block)
-                    .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
+                Paragraph::new(filter.as_str()).block(search_block).style(
+                    Style::default()
+                        .fg(crate::ui::styles::COLOR_FG)
+                        .bg(crate::ui::styles::COLOR_BG),
+                ),
                 chunks[1],
             );
 
@@ -383,8 +385,11 @@ async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
             let items: Vec<ListItem> = filtered_users
                 .iter()
                 .map(|u| {
-                    ListItem::new(format!("  •  {} ({})", u.username, u.id))
-                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG))
+                    ListItem::new(format!("  •  {} ({})", u.username, u.id)).style(
+                        Style::default()
+                            .fg(crate::ui::styles::COLOR_FG)
+                            .bg(crate::ui::styles::COLOR_BG),
+                    )
                 })
                 .collect();
 
@@ -402,11 +407,32 @@ async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
 
             // 4. Help Footer
             let help_line = Line::from(vec![
-                Span::styled("↑/↓", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled(" Navigate  |  ", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
-                Span::styled(" Confirm  |  ", Style::default().fg(crate::ui::styles::COLOR_FG)),
-                Span::styled("Esc / Ctrl+C", Style::default().add_modifier(Modifier::BOLD).fg(crate::ui::styles::COLOR_PRIMARY)),
+                Span::styled(
+                    "↑/↓",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::ui::styles::COLOR_PRIMARY),
+                ),
+                Span::styled(
+                    " Navigate  |  ",
+                    Style::default().fg(crate::ui::styles::COLOR_FG),
+                ),
+                Span::styled(
+                    "Enter",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::ui::styles::COLOR_PRIMARY),
+                ),
+                Span::styled(
+                    " Confirm  |  ",
+                    Style::default().fg(crate::ui::styles::COLOR_FG),
+                ),
+                Span::styled(
+                    "Esc / Ctrl+C",
+                    Style::default()
+                        .add_modifier(Modifier::BOLD)
+                        .fg(crate::ui::styles::COLOR_PRIMARY),
+                ),
                 Span::styled(" Cancel", Style::default().fg(crate::ui::styles::COLOR_FG)),
             ]);
 
@@ -416,7 +442,7 @@ async fn select_user_tui(users: &[User]) -> Result<Option<User>> {
                     .block(
                         Block::default()
                             .borders(Borders::TOP)
-                            .border_style(Style::default().fg(crate::ui::styles::COLOR_MUTED))
+                            .border_style(Style::default().fg(crate::ui::styles::COLOR_MUTED)),
                     ),
                 chunks[3],
             );

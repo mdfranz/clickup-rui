@@ -1,7 +1,7 @@
 use crate::ai::summarizer::GeminiSummarizer;
-use crate::cmd::activity::{collect_activities, ActivityScope};
 use crate::clickup::api::ClickUpApi;
 use crate::clickup::models::Activity;
+use crate::cmd::activity::{collect_activities, ActivityScope};
 use crate::config::Config;
 use crate::ui::spinner::Spinner;
 use crate::util::errors::Result;

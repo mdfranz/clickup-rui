@@ -78,7 +78,8 @@ pub async fn route_command_with_context<A: ClickUpApi + Clone + 'static>(
             raw,
             markdown,
         } => {
-            team_status::run_team_status(api, days, summarize, raw, markdown, context.menu_mode).await?;
+            team_status::run_team_status(api, days, summarize, raw, markdown, context.menu_mode)
+                .await?;
         }
         Commands::Track {
             user_id,

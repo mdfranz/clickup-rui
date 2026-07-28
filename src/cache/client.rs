@@ -356,8 +356,14 @@ impl<A: ClickUpApi> ClickUpApi for CachedClient<A> {
         }
     }
 
-    async fn get_tasks_incremental(&self, list_id: &str, date_updated_gt: i64) -> Result<Vec<Task>> {
-        self.api.get_tasks_incremental(list_id, date_updated_gt).await
+    async fn get_tasks_incremental(
+        &self,
+        list_id: &str,
+        date_updated_gt: i64,
+    ) -> Result<Vec<Task>> {
+        self.api
+            .get_tasks_incremental(list_id, date_updated_gt)
+            .await
     }
 
     async fn get_task_detail(&self, task_id: &str) -> Result<Task> {
@@ -522,8 +528,8 @@ impl<A: ClickUpApi> CachedClient<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use crate::util::errors::AppError;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     struct MockApi {
         tasks: std::sync::Mutex<Vec<Task>>,
@@ -532,13 +538,25 @@ mod tests {
     }
 
     impl ClickUpApi for MockApi {
-        async fn get_teams(&self) -> Result<Vec<Team>> { unimplemented!() }
-        async fn get_current_user(&self) -> Result<User> { unimplemented!() }
-        async fn get_spaces(&self, _team_id: &str) -> Result<Vec<Space>> { unimplemented!() }
-        async fn get_folders(&self, _space_id: &str) -> Result<Vec<Folder>> { unimplemented!() }
-        async fn get_lists(&self, _folder_id: &str) -> Result<Vec<List>> { unimplemented!() }
-        async fn get_list_detail(&self, _list_id: &str) -> Result<List> { unimplemented!() }
-        
+        async fn get_teams(&self) -> Result<Vec<Team>> {
+            unimplemented!()
+        }
+        async fn get_current_user(&self) -> Result<User> {
+            unimplemented!()
+        }
+        async fn get_spaces(&self, _team_id: &str) -> Result<Vec<Space>> {
+            unimplemented!()
+        }
+        async fn get_folders(&self, _space_id: &str) -> Result<Vec<Folder>> {
+            unimplemented!()
+        }
+        async fn get_lists(&self, _folder_id: &str) -> Result<Vec<List>> {
+            unimplemented!()
+        }
+        async fn get_list_detail(&self, _list_id: &str) -> Result<List> {
+            unimplemented!()
+        }
+
         async fn get_tasks(&self, _list_id: &str, _include_closed: bool) -> Result<Vec<Task>> {
             if self.should_fail.load(Ordering::SeqCst) {
                 return Err(AppError::Other("Network error".to_string()));
@@ -546,15 +564,23 @@ mod tests {
             Ok(self.tasks.lock().unwrap().clone())
         }
 
-        async fn get_tasks_incremental(&self, _list_id: &str, _date_updated_gt: i64) -> Result<Vec<Task>> {
+        async fn get_tasks_incremental(
+            &self,
+            _list_id: &str,
+            _date_updated_gt: i64,
+        ) -> Result<Vec<Task>> {
             if self.should_fail.load(Ordering::SeqCst) {
                 return Err(AppError::Other("Network error".to_string()));
             }
             Ok(self.incremental_tasks.lock().unwrap().clone())
         }
 
-        async fn get_task_detail(&self, _task_id: &str) -> Result<Task> { unimplemented!() }
-        async fn get_task_comments(&self, _task_id: &str) -> Result<Vec<Comment>> { unimplemented!() }
+        async fn get_task_detail(&self, _task_id: &str) -> Result<Task> {
+            unimplemented!()
+        }
+        async fn get_task_comments(&self, _task_id: &str) -> Result<Vec<Comment>> {
+            unimplemented!()
+        }
         async fn update_task_status(&self, task_id: &str, status: &str) -> Result<Task> {
             let mut tasks = self.tasks.lock().unwrap();
             if let Some(t) = tasks.iter_mut().find(|t| t.id == task_id) {
@@ -564,7 +590,13 @@ mod tests {
             }
             Err(AppError::Other("Task not found".to_string()))
         }
-        async fn create_task_comment(&self, _task_id: &str, _comment_text: &str) -> Result<Comment> { unimplemented!() }
+        async fn create_task_comment(
+            &self,
+            _task_id: &str,
+            _comment_text: &str,
+        ) -> Result<Comment> {
+            unimplemented!()
+        }
         async fn create_task(
             &self,
             _list_id: &str,
@@ -573,10 +605,18 @@ mod tests {
             _status: Option<&str>,
             _assignees: Option<&[i64]>,
             _tags: Option<&[String]>,
-        ) -> Result<Task> { unimplemented!() }
-        async fn get_space_tags(&self, _space_id: &str) -> Result<Vec<Tag>> { unimplemented!() }
-        async fn add_tag_to_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { Ok(()) }
-        async fn remove_tag_from_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> { Ok(()) }
+        ) -> Result<Task> {
+            unimplemented!()
+        }
+        async fn get_space_tags(&self, _space_id: &str) -> Result<Vec<Tag>> {
+            unimplemented!()
+        }
+        async fn add_tag_to_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn remove_tag_from_task(&self, _task_id: &str, _tag_name: &str) -> Result<()> {
+            Ok(())
+        }
     }
 
     fn make_test_task(id: &str, name: &str, date_updated: &str, status: &str) -> Task {
@@ -608,24 +648,24 @@ mod tests {
     #[tokio::test]
     async fn test_cache_full_fetch_and_incremental_merge() {
         let store = Arc::new(Mutex::new(CacheStore::new()));
-        
+
         let t1 = make_test_task("1", "Task One", "1000", "open");
         let t2 = make_test_task("2", "Task Two", "2000", "open");
-        
+
         let mock_api = MockApi {
             tasks: std::sync::Mutex::new(vec![t1.clone(), t2.clone()]),
             incremental_tasks: std::sync::Mutex::new(vec![]),
             should_fail: AtomicBool::new(false),
         };
-        
+
         let cached_client = CachedClient::new(mock_api, store.clone(), false);
-        
+
         // 1. Initial fetch -> Cache is empty, so should do full fetch
         let res = cached_client.get_tasks("list_123", false).await.unwrap();
         assert_eq!(res.len(), 2);
         assert_eq!(res[0].id, "1");
         assert_eq!(res[1].id, "2");
-        
+
         // Check cache store is updated
         {
             let s = store.lock().await;
@@ -633,7 +673,7 @@ mod tests {
             assert_eq!(entry.tasks.len(), 2);
             assert_eq!(entry.max_date_updated, 2000);
         }
-        
+
         // 2. Incremental fetch:
         // Set fetched_at to a past time so it triggers incremental fetch
         {
@@ -641,31 +681,31 @@ mod tests {
             let entry = s.tasks.get_mut("list_123").unwrap();
             entry.fetched_at = now_secs() - 10; // Trigger incremental
         }
-        
+
         // Mock updated task t1 (updated name & date_updated) and new task t3
         let t1_updated = make_test_task("1", "Task One Updated", "3000", "in progress");
         let t3 = make_test_task("3", "Task Three", "4000", "open");
-        
+
         *cached_client.api.incremental_tasks.lock().unwrap() = vec![t1_updated, t3];
-        
+
         // Get tasks again
         let res2 = cached_client.get_tasks("list_123", false).await.unwrap();
-        
+
         // Check returned tasks: t1 should be updated, t2 remains, t3 should be added!
         assert_eq!(res2.len(), 3);
-        
+
         let task1 = res2.iter().find(|t| t.id == "1").unwrap();
         assert_eq!(task1.name, "Task One Updated");
         assert_eq!(task1.status.status, "in progress");
         assert_eq!(task1.date_updated.as_deref(), Some("3000"));
-        
+
         let task2 = res2.iter().find(|t| t.id == "2").unwrap();
         assert_eq!(task2.name, "Task Two");
-        
+
         let task3 = res2.iter().find(|t| t.id == "3").unwrap();
         assert_eq!(task3.name, "Task Three");
         assert_eq!(task3.date_updated.as_deref(), Some("4000"));
-        
+
         // Check cache store has been updated correctly with max_date_updated
         {
             let s = store.lock().await;
@@ -677,28 +717,31 @@ mod tests {
     #[tokio::test]
     async fn test_cache_stale_fallback() {
         let store = Arc::new(Mutex::new(CacheStore::new()));
-        
+
         let t1 = make_test_task("1", "Task One", "1000", "open");
-        
+
         // Populate cache store directly
         {
             let mut s = store.lock().await;
-            s.tasks.insert("list_123".to_string(), TaskListCacheEntry {
-                tasks: vec![t1.clone()],
-                fetched_at: now_secs() - 10,
-                max_date_updated: 1000,
-                includes_closed: false,
-            });
+            s.tasks.insert(
+                "list_123".to_string(),
+                TaskListCacheEntry {
+                    tasks: vec![t1.clone()],
+                    fetched_at: now_secs() - 10,
+                    max_date_updated: 1000,
+                    includes_closed: false,
+                },
+            );
         }
-        
+
         let mock_api = MockApi {
             tasks: std::sync::Mutex::new(vec![]),
             incremental_tasks: std::sync::Mutex::new(vec![]),
             should_fail: AtomicBool::new(true), // API fails!
         };
-        
+
         let cached_client = CachedClient::new(mock_api, store.clone(), false);
-        
+
         // This should fall back to cached tasks despite API failing
         let res = cached_client.get_tasks("list_123", false).await.unwrap();
         assert_eq!(res.len(), 1);
@@ -709,32 +752,38 @@ mod tests {
     #[tokio::test]
     async fn test_cache_update_task_status() {
         let store = Arc::new(Mutex::new(CacheStore::new()));
-        
+
         let t1 = make_test_task("1", "Task One", "1000", "open");
-        
+
         {
             let mut s = store.lock().await;
-            s.tasks.insert("list_123".to_string(), TaskListCacheEntry {
-                tasks: vec![t1.clone()],
-                fetched_at: now_secs(),
-                max_date_updated: 1000,
-                includes_closed: false,
-            });
+            s.tasks.insert(
+                "list_123".to_string(),
+                TaskListCacheEntry {
+                    tasks: vec![t1.clone()],
+                    fetched_at: now_secs(),
+                    max_date_updated: 1000,
+                    includes_closed: false,
+                },
+            );
         }
-        
+
         let mock_api = MockApi {
             tasks: std::sync::Mutex::new(vec![t1.clone()]),
             incremental_tasks: std::sync::Mutex::new(vec![]),
             should_fail: AtomicBool::new(false),
         };
-        
+
         let cached_client = CachedClient::new(mock_api, store.clone(), false);
-        
+
         // Update task status from "open" to "in progress"
-        let updated = cached_client.update_task_status("1", "in progress").await.unwrap();
+        let updated = cached_client
+            .update_task_status("1", "in progress")
+            .await
+            .unwrap();
         assert_eq!(updated.status.status, "in progress");
         assert_eq!(updated.date_updated.as_deref(), Some("9999"));
-        
+
         // Verify cache store task list now contains the updated task
         {
             let s = store.lock().await;
@@ -742,7 +791,7 @@ mod tests {
             assert_eq!(entry.tasks.len(), 1);
             assert_eq!(entry.tasks[0].status.status, "in progress");
             assert_eq!(entry.tasks[0].date_updated.as_deref(), Some("9999"));
-            
+
             // Verify task detail cache also has the updated task
             let detail = s.task_detail_by_task.get("1").unwrap();
             assert_eq!(detail.value.status.status, "in progress");
@@ -752,36 +801,45 @@ mod tests {
     #[tokio::test]
     async fn test_cache_invalidate_task() {
         let store = Arc::new(Mutex::new(CacheStore::new()));
-        
+
         let t1 = make_test_task("1", "Task One", "1000", "open");
-        
+
         {
             let mut s = store.lock().await;
-            s.task_detail_by_task.insert("1".to_string(), CacheEntry {
-                value: t1.clone(),
-                expires_at: now_secs() + 100,
-            });
-            s.comments_by_task.insert("1".to_string(), CacheEntry {
-                value: vec![],
-                expires_at: now_secs() + 100,
-            });
-            s.task_detail_by_task.insert("2".to_string(), CacheEntry {
-                value: t1.clone(),
-                expires_at: now_secs() + 100,
-            });
+            s.task_detail_by_task.insert(
+                "1".to_string(),
+                CacheEntry {
+                    value: t1.clone(),
+                    expires_at: now_secs() + 100,
+                },
+            );
+            s.comments_by_task.insert(
+                "1".to_string(),
+                CacheEntry {
+                    value: vec![],
+                    expires_at: now_secs() + 100,
+                },
+            );
+            s.task_detail_by_task.insert(
+                "2".to_string(),
+                CacheEntry {
+                    value: t1.clone(),
+                    expires_at: now_secs() + 100,
+                },
+            );
         }
-        
+
         let mock_api = MockApi {
             tasks: std::sync::Mutex::new(vec![]),
             incremental_tasks: std::sync::Mutex::new(vec![]),
             should_fail: AtomicBool::new(false),
         };
-        
+
         let cached_client = CachedClient::new(mock_api, store.clone(), false);
-        
+
         // Invalidate task "1"
         cached_client.invalidate_task("1").await;
-        
+
         // Verify cache store: task "1" entries should be gone, task "2" should remain
         {
             let s = store.lock().await;
@@ -825,7 +883,10 @@ mod tests {
             false,
         );
 
-        cached_client.add_tag_to_task("1", "Needs Review").await.unwrap();
+        cached_client
+            .add_tag_to_task("1", "Needs Review")
+            .await
+            .unwrap();
 
         let cache = store.lock().await;
         assert!(!cache.task_detail_by_task.contains_key("1"));
