@@ -38,7 +38,11 @@ pub struct Status {
     pub status: String,
     #[serde(deserialize_with = "deserialize_nullable_string", default)]
     pub color: String,
-    #[serde(rename = "type", deserialize_with = "deserialize_nullable_string", default)]
+    #[serde(
+        rename = "type",
+        deserialize_with = "deserialize_nullable_string",
+        default
+    )]
     pub type_: String,
 }
 

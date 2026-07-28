@@ -7,7 +7,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph,
+};
 use ratatui::Terminal;
 use std::io;
 
@@ -30,7 +32,6 @@ pub async fn run_new_task<A: ClickUpApi>(api: &A) -> Result<()> {
     let mut guard = crate::ui::terminal::TerminalGuard::create()?;
     run_new_task_loop(api, guard.inner()).await
 }
-
 
 #[allow(unused_assignments)]
 async fn run_new_task_loop<A: ClickUpApi>(
@@ -90,8 +91,14 @@ async fn run_new_task_loop<A: ClickUpApi>(
                     if assignee_filter.is_empty() {
                         true
                     } else {
-                        u.username.to_lowercase().contains(&assignee_filter.to_lowercase())
-                            || u.email.as_deref().unwrap_or("").to_lowercase().contains(&assignee_filter.to_lowercase())
+                        u.username
+                            .to_lowercase()
+                            .contains(&assignee_filter.to_lowercase())
+                            || u.email
+                                .as_deref()
+                                .unwrap_or("")
+                                .to_lowercase()
+                                .contains(&assignee_filter.to_lowercase())
                     }
                 })
                 .collect()
@@ -428,7 +435,10 @@ async fn run_new_task_loop<A: ClickUpApi>(
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     // Universal cancel key
-                    if key.code == KeyCode::Esc && step != NewTaskStep::Done && step != NewTaskStep::Creating {
+                    if key.code == KeyCode::Esc
+                        && step != NewTaskStep::Done
+                        && step != NewTaskStep::Creating
+                    {
                         return Ok(());
                     }
 
@@ -465,9 +475,8 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                     statuses = l_detail.statuses;
                                     statuses_state.select(Some(0));
                                     step = NewTaskStep::StatusSelect;
-                                } else if let Some(found_list) = lists
-                                    .iter()
-                                    .find(|l| l.name.to_lowercase() == "list")
+                                } else if let Some(found_list) =
+                                    lists.iter().find(|l| l.name.to_lowercase() == "list")
                                 {
                                     let l_selected = found_list.clone();
                                     selected_list = Some(l_selected.clone());
@@ -559,7 +568,8 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 assignee_choice = Some(current_user.clone());
                                 if space_tags.is_empty() {
                                     let cfg = Config::load()?;
-                                    space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                                    space_tags =
+                                        api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
                                 }
                                 tags_state.select(Some(0));
                                 step = NewTaskStep::TagSelect;
@@ -610,7 +620,8 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 }
                                 if space_tags.is_empty() {
                                     let cfg = Config::load()?;
-                                    space_tags = api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
+                                    space_tags =
+                                        api.get_space_tags(&cfg.space_id).await.unwrap_or_default();
                                 }
                                 tags_state.select(Some(0));
                                 step = NewTaskStep::TagSelect;
@@ -634,7 +645,9 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 if let Some(idx) = tags_state.selected() {
                                     if let Some(tag) = space_tags.get(idx) {
                                         let name = tag.name.clone();
-                                        if let Some(pos) = selected_tags.iter().position(|t| t == &name) {
+                                        if let Some(pos) =
+                                            selected_tags.iter().position(|t| t == &name)
+                                        {
                                             selected_tags.remove(pos);
                                         } else {
                                             selected_tags.push(name);
@@ -653,18 +666,25 @@ async fn run_new_task_loop<A: ClickUpApi>(
                                 // Perform creation
                                 terminal.draw(|f| {
                                     crate::ui::styles::render_background(f);
-                                f.render_widget(
-                                    Paragraph::new("Creating task...")
-                                        .block(
-                                            Block::default().borders(Borders::ALL).title(" Please Wait "),
-                                        )
-                                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
-                                    f.area(),
-                                );
+                                    f.render_widget(
+                                        Paragraph::new("Creating task...")
+                                            .block(
+                                                Block::default()
+                                                    .borders(Borders::ALL)
+                                                    .title(" Please Wait "),
+                                            )
+                                            .style(
+                                                Style::default()
+                                                    .fg(crate::ui::styles::COLOR_FG)
+                                                    .bg(crate::ui::styles::COLOR_BG),
+                                            ),
+                                        f.area(),
+                                    );
                                 })?;
 
                                 let list_id = &selected_list.as_ref().unwrap().id;
-                                let status_name = selected_status.as_ref().map(|s| s.status.as_str());
+                                let status_name =
+                                    selected_status.as_ref().map(|s| s.status.as_str());
                                 let assignees: Option<Vec<i64>> =
                                     assignee_choice.as_ref().map(|u| vec![u.id]);
 
