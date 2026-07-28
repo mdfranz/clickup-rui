@@ -58,10 +58,8 @@ pub async fn run_tasks<A: ClickUpApi>(
             }
 
             // Build hierarchy maps
-            let task_map: HashMap<String, Task> = tasks
-                .iter()
-                .map(|t| (t.id.clone(), t.clone()))
-                .collect();
+            let task_map: HashMap<String, Task> =
+                tasks.iter().map(|t| (t.id.clone(), t.clone())).collect();
 
             let mut subtasks_by_parent: HashMap<String, Vec<Task>> = HashMap::new();
             for task in &tasks {
@@ -77,8 +75,7 @@ pub async fn run_tasks<A: ClickUpApi>(
             let mut top_level_tasks: Vec<Task> = tasks
                 .iter()
                 .filter(|t| {
-                    t.parent_id.is_none()
-                        || !task_map.contains_key(t.parent_id.as_ref().unwrap())
+                    t.parent_id.is_none() || !task_map.contains_key(t.parent_id.as_ref().unwrap())
                 })
                 .cloned()
                 .collect();
@@ -188,7 +185,12 @@ async fn render_task_node<A: ClickUpApi>(
         .iter()
         .map(|u| {
             if show_id {
-                format!("{} ({}/{})", u.username, u.id, u.email.as_deref().unwrap_or("N/A"))
+                format!(
+                    "{} ({}/{})",
+                    u.username,
+                    u.id,
+                    u.email.as_deref().unwrap_or("N/A")
+                )
             } else {
                 u.username.clone()
             }

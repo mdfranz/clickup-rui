@@ -16,10 +16,7 @@ impl TerminalGuard {
     pub fn create() -> Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
-        crossterm::execute!(
-            stdout,
-            crossterm::terminal::EnterAlternateScreen
-        )?;
+        crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
         terminal.hide_cursor()?;

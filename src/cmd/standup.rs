@@ -1,5 +1,5 @@
 use crate::clickup::api::ClickUpApi;
-use crate::clickup::models::{Status, Task, Comment};
+use crate::clickup::models::{Comment, Status, Task};
 use crate::config::Config;
 use crate::util::errors::Result;
 use crate::util::filter::should_include_task;
@@ -8,7 +8,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, List as RatatuiList, ListItem, ListState, Padding, Paragraph,
+};
 use ratatui::Terminal;
 use std::collections::HashSet;
 use std::io;
@@ -36,7 +38,6 @@ pub async fn run_standup<A: ClickUpApi>(api: &A, all_flag: bool, mine_only: bool
     let mut guard = crate::ui::terminal::TerminalGuard::create()?;
     run_standup_loop(api, guard.inner(), all_flag, mine_only).await
 }
-
 
 async fn run_standup_loop<A: ClickUpApi>(
     api: &A,
@@ -76,7 +77,11 @@ async fn run_standup_loop<A: ClickUpApi>(
                     Block::default()
                         .borders(Borders::ALL)
                         .title(" Daily Standup ")
-                        .style(Style::default().fg(crate::ui::styles::COLOR_FG).bg(crate::ui::styles::COLOR_BG)),
+                        .style(
+                            Style::default()
+                                .fg(crate::ui::styles::COLOR_FG)
+                                .bg(crate::ui::styles::COLOR_BG),
+                        ),
                 )
                 .style(
                     Style::default()
@@ -391,9 +396,12 @@ async fn run_standup_loop<A: ClickUpApi>(
                                 terminal.draw(|f| {
                                     crate::ui::styles::render_background(f);
                                     f.render_widget(
-                                        Paragraph::new("Loading task comments for context...").block(
-                                            Block::default().borders(Borders::ALL).title(" Please Wait "),
-                                        ),
+                                        Paragraph::new("Loading task comments for context...")
+                                            .block(
+                                                Block::default()
+                                                    .borders(Borders::ALL)
+                                                    .title(" Please Wait "),
+                                            ),
                                         f.area(),
                                     );
                                 })?;
@@ -412,7 +420,11 @@ async fn run_standup_loop<A: ClickUpApi>(
                                             c
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to fetch task comments for {}: {:?}", t.id, e);
+                                            tracing::error!(
+                                                "Failed to fetch task comments for {}: {:?}",
+                                                t.id,
+                                                e
+                                            );
                                             Vec::new()
                                         }
                                     };
@@ -434,7 +446,9 @@ async fn run_standup_loop<A: ClickUpApi>(
                             _ => {}
                         },
                         StandupStep::TaskReport => {
-                            if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                            if key.code == KeyCode::Char('s')
+                                && key.modifiers.contains(KeyModifiers::CONTROL)
+                            {
                                 // Submit current report and move to next
                                 let rep = &mut reports[current_report_idx];
                                 let status_changed = rep.new_status.is_some()
@@ -445,9 +459,12 @@ async fn run_standup_loop<A: ClickUpApi>(
                                     terminal.draw(|f| {
                                         crate::ui::styles::render_background(f);
                                         f.render_widget(
-                                            Paragraph::new("Submitting updates to ClickUp...").block(
-                                                Block::default().borders(Borders::ALL).title(" Posting "),
-                                            ),
+                                            Paragraph::new("Submitting updates to ClickUp...")
+                                                .block(
+                                                    Block::default()
+                                                        .borders(Borders::ALL)
+                                                        .title(" Posting "),
+                                                ),
                                             f.area(),
                                         );
                                     })?;
@@ -485,7 +502,9 @@ async fn run_standup_loop<A: ClickUpApi>(
                                     crate::ui::styles::render_background(f);
                                     f.render_widget(
                                         Paragraph::new("Loading status list...").block(
-                                            Block::default().borders(Borders::ALL).title(" Please Wait "),
+                                            Block::default()
+                                                .borders(Borders::ALL)
+                                                .title(" Please Wait "),
                                         ),
                                         f.area(),
                                     );
@@ -504,9 +523,16 @@ async fn run_standup_loop<A: ClickUpApi>(
                                     'outer: for folder in &cfg.folders {
                                         if let Ok(lists) = api.get_lists(&folder.id).await {
                                             for l in lists {
-                                                if let Ok(tasks_in_list) = api.get_tasks(&l.id, true).await {
-                                                    if tasks_in_list.iter().any(|t| t.id == rep.task.id) {
-                                                        if let Ok(ld) = api.get_list_detail(&l.id).await {
+                                                if let Ok(tasks_in_list) =
+                                                    api.get_tasks(&l.id, true).await
+                                                {
+                                                    if tasks_in_list
+                                                        .iter()
+                                                        .any(|t| t.id == rep.task.id)
+                                                    {
+                                                        if let Ok(ld) =
+                                                            api.get_list_detail(&l.id).await
+                                                        {
                                                             found_statuses = ld.statuses;
                                                             break 'outer;
                                                         }
@@ -520,11 +546,31 @@ async fn run_standup_loop<A: ClickUpApi>(
                                 if found_statuses.is_empty() {
                                     // Fallback statuses
                                     found_statuses = vec![
-                                        Status { status: "To Do".to_string(), color: String::new(), type_: "todo".to_string() },
-                                        Status { status: "In Progress".to_string(), color: String::new(), type_: "custom".to_string() },
-                                        Status { status: "In Review".to_string(), color: String::new(), type_: "custom".to_string() },
-                                        Status { status: "Blocked".to_string(), color: String::new(), type_: "custom".to_string() },
-                                        Status { status: "Complete".to_string(), color: String::new(), type_: "closed".to_string() },
+                                        Status {
+                                            status: "To Do".to_string(),
+                                            color: String::new(),
+                                            type_: "todo".to_string(),
+                                        },
+                                        Status {
+                                            status: "In Progress".to_string(),
+                                            color: String::new(),
+                                            type_: "custom".to_string(),
+                                        },
+                                        Status {
+                                            status: "In Review".to_string(),
+                                            color: String::new(),
+                                            type_: "custom".to_string(),
+                                        },
+                                        Status {
+                                            status: "Blocked".to_string(),
+                                            color: String::new(),
+                                            type_: "custom".to_string(),
+                                        },
+                                        Status {
+                                            status: "Complete".to_string(),
+                                            color: String::new(),
+                                            type_: "closed".to_string(),
+                                        },
                                     ];
                                 }
 
@@ -571,7 +617,8 @@ async fn run_standup_loop<A: ClickUpApi>(
                             }
                             KeyCode::Enter => {
                                 let idx = status_state.selected().unwrap_or(0);
-                                reports[current_report_idx].new_status = Some(list_statuses[idx].clone());
+                                reports[current_report_idx].new_status =
+                                    Some(list_statuses[idx].clone());
                                 step = StandupStep::TaskReport;
                             }
                             _ => {}

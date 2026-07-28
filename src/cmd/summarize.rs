@@ -55,7 +55,10 @@ pub async fn run_summarize<A: ClickUpApi>(
         }
 
         println!("Generating summary for folder: {}...", folder.name);
-        match summarizer.summarize_tasks(&folder.name, &folder_tasks).await {
+        match summarizer
+            .summarize_tasks(&folder.name, &folder_tasks)
+            .await
+        {
             Ok(summary) => {
                 if markdown_flag {
                     println!("{}", summary);
@@ -65,10 +68,7 @@ pub async fn run_summarize<A: ClickUpApi>(
                 println!("\n---\n");
             }
             Err(e) => {
-                println!(
-                    "Error generating summary for folder {}: {}",
-                    folder.name, e
-                );
+                println!("Error generating summary for folder {}: {}", folder.name, e);
             }
         }
     }

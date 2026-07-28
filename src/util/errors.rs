@@ -9,10 +9,7 @@ pub enum AppError {
     EnvError(String),
 
     #[error("ClickUp API error: status {status} - {message}")]
-    ApiError {
-        status: u16,
-        message: String,
-    },
+    ApiError { status: u16, message: String },
 
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),

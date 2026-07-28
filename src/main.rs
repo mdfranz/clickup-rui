@@ -31,8 +31,7 @@ fn init_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .append(true)
         .open(&log_path)?;
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("debug"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
 
     let file_layer = fmt::layer()
         .with_writer(std::sync::Mutex::new(file))

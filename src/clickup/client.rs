@@ -60,13 +60,21 @@ impl ClickUpClient {
         encoded
     }
 
-    async fn request<T, R>(&self, method: reqwest::Method, path: &str, body: Option<&T>) -> Result<R>
+    async fn request<T, R>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&T>,
+    ) -> Result<R>
     where
         T: Serialize + ?Sized,
         R: for<'de> Deserialize<'de>,
     {
         let url = format!("{}{}", self.base_url, path);
-        let mut builder = self.client.request(method.clone(), &url).headers(self.headers());
+        let mut builder = self
+            .client
+            .request(method.clone(), &url)
+            .headers(self.headers());
 
         if let Some(b) = body {
             builder = builder.json(b);
@@ -116,12 +124,7 @@ impl ClickUpClient {
 
         if !status.is_success() {
             let err_body = res.text().await.unwrap_or_default();
-            tracing::error!(
-                "API Error: status={} body={} url={}",
-                status,
-                err_body,
-                url
-            );
+            tracing::error!("API Error: status={} body={} url={}", status, err_body, url);
             return Err(AppError::ApiError {
                 status: status.as_u16(),
                 message: err_body,
@@ -210,30 +213,40 @@ struct SpaceTagsResponse {
 
 impl ClickUpApi for ClickUpClient {
     async fn get_teams(&self) -> Result<Vec<Team>> {
-        let resp: TeamsResponse = self.request(reqwest::Method::GET, "/team", None::<&()>).await?;
+        let resp: TeamsResponse = self
+            .request(reqwest::Method::GET, "/team", None::<&()>)
+            .await?;
         Ok(resp.teams)
     }
 
     async fn get_current_user(&self) -> Result<User> {
-        let resp: UserResponse = self.request(reqwest::Method::GET, "/user", None::<&()>).await?;
+        let resp: UserResponse = self
+            .request(reqwest::Method::GET, "/user", None::<&()>)
+            .await?;
         Ok(resp.user)
     }
 
     async fn get_spaces(&self, team_id: &str) -> Result<Vec<Space>> {
         let path = format!("/team/{}/space?archived=false", team_id);
-        let resp: SpacesResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+        let resp: SpacesResponse = self
+            .request(reqwest::Method::GET, &path, None::<&()>)
+            .await?;
         Ok(resp.spaces)
     }
 
     async fn get_folders(&self, space_id: &str) -> Result<Vec<Folder>> {
         let path = format!("/space/{}/folder?archived=false", space_id);
-        let resp: FoldersResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+        let resp: FoldersResponse = self
+            .request(reqwest::Method::GET, &path, None::<&()>)
+            .await?;
         Ok(resp.folders)
     }
 
     async fn get_lists(&self, folder_id: &str) -> Result<Vec<List>> {
         let path = format!("/folder/{}/list?archived=false", folder_id);
-        let resp: ListsResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+        let resp: ListsResponse = self
+            .request(reqwest::Method::GET, &path, None::<&()>)
+            .await?;
         Ok(resp.lists)
     }
 
@@ -250,7 +263,9 @@ impl ClickUpApi for ClickUpClient {
                 "/list/{}/task?archived=false&include_closed={}&subtasks=true&page={}",
                 list_id, include_closed, page
             );
-            let resp: TasksResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+            let resp: TasksResponse = self
+                .request(reqwest::Method::GET, &path, None::<&()>)
+                .await?;
             all_tasks.extend(resp.tasks);
             if resp.last_page {
                 break;
@@ -260,7 +275,11 @@ impl ClickUpApi for ClickUpClient {
         Ok(all_tasks)
     }
 
-    async fn get_tasks_incremental(&self, list_id: &str, date_updated_gt: i64) -> Result<Vec<Task>> {
+    async fn get_tasks_incremental(
+        &self,
+        list_id: &str,
+        date_updated_gt: i64,
+    ) -> Result<Vec<Task>> {
         let mut all_tasks = Vec::new();
         let mut page = 0u32;
         loop {
@@ -268,7 +287,9 @@ impl ClickUpApi for ClickUpClient {
                 "/list/{}/task?archived=false&include_closed=true&subtasks=true&date_updated_gt={}&page={}",
                 list_id, date_updated_gt, page
             );
-            let resp: TasksResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+            let resp: TasksResponse = self
+                .request(reqwest::Method::GET, &path, None::<&()>)
+                .await?;
             all_tasks.extend(resp.tasks);
             if resp.last_page {
                 break;
@@ -285,7 +306,9 @@ impl ClickUpApi for ClickUpClient {
 
     async fn get_task_comments(&self, task_id: &str) -> Result<Vec<Comment>> {
         let path = format!("/task/{}/comment", task_id);
-        let resp: CommentsResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+        let resp: CommentsResponse = self
+            .request(reqwest::Method::GET, &path, None::<&()>)
+            .await?;
         Ok(resp.comments)
     }
 
@@ -298,7 +321,8 @@ impl ClickUpApi for ClickUpClient {
     async fn create_task_comment(&self, task_id: &str, comment_text: &str) -> Result<Comment> {
         let path = format!("/task/{}/comment", task_id);
         let body = CreateCommentRequest { comment_text };
-        self.request(reqwest::Method::POST, &path, Some(&body)).await
+        self.request(reqwest::Method::POST, &path, Some(&body))
+            .await
     }
 
     async fn create_task(
@@ -318,12 +342,15 @@ impl ClickUpApi for ClickUpClient {
             assignees,
             tags,
         };
-        self.request(reqwest::Method::POST, &path, Some(&body)).await
+        self.request(reqwest::Method::POST, &path, Some(&body))
+            .await
     }
 
     async fn get_space_tags(&self, space_id: &str) -> Result<Vec<Tag>> {
         let path = format!("/space/{}/tag", space_id);
-        let resp: SpaceTagsResponse = self.request(reqwest::Method::GET, &path, None::<&()>).await?;
+        let resp: SpaceTagsResponse = self
+            .request(reqwest::Method::GET, &path, None::<&()>)
+            .await?;
         Ok(resp.tags)
     }
 
@@ -333,7 +360,8 @@ impl ClickUpApi for ClickUpClient {
             task_id,
             Self::encode_path_segment(tag_name)
         );
-        self.request::<(), serde_json::Value>(reqwest::Method::POST, &path, None::<&()>).await?;
+        self.request::<(), serde_json::Value>(reqwest::Method::POST, &path, None::<&()>)
+            .await?;
         Ok(())
     }
 
@@ -343,7 +371,8 @@ impl ClickUpApi for ClickUpClient {
             task_id,
             Self::encode_path_segment(tag_name)
         );
-        self.request::<(), serde_json::Value>(reqwest::Method::DELETE, &path, None::<&()>).await?;
+        self.request::<(), serde_json::Value>(reqwest::Method::DELETE, &path, None::<&()>)
+            .await?;
         Ok(())
     }
 }

@@ -32,9 +32,12 @@ fn tokenize_line(line: &str) -> Vec<String> {
     let len = chars.len();
 
     while i < len {
-        if chars[i] == '\\' && i + 1 < len && (chars[i+1] == ' ' || chars[i+1] == '\t' || chars[i+1] == ' ') {
+        if chars[i] == '\\'
+            && i + 1 < len
+            && (chars[i + 1] == ' ' || chars[i + 1] == '\t' || chars[i + 1] == ' ')
+        {
             current_word.push(chars[i]);
-            current_word.push(chars[i+1]);
+            current_word.push(chars[i + 1]);
             i += 2;
         } else if chars[i].is_whitespace() {
             if !current_word.is_empty() {
@@ -97,8 +100,8 @@ pub fn parse_links(line: &str) -> Vec<TextSegment> {
 
     while i < len {
         // Check for URL prefixes (http:// and https:// only)
-        let is_http = (i + 7 <= len && chars[i..i+7].iter().collect::<String>() == "http://")
-            || (i + 8 <= len && chars[i..i+8].iter().collect::<String>() == "https://");
+        let is_http = (i + 7 <= len && chars[i..i + 7].iter().collect::<String>() == "http://")
+            || (i + 8 <= len && chars[i..i + 8].iter().collect::<String>() == "https://");
 
         if is_http {
             if i > start {
@@ -111,7 +114,11 @@ pub fn parse_links(line: &str) -> Vec<TextSegment> {
             }
             let url_str: String = chars[url_start..i].iter().collect();
 
-            let prefix_len = if url_str.starts_with("https://") { 8 } else { 7 };
+            let prefix_len = if url_str.starts_with("https://") {
+                8
+            } else {
+                7
+            };
 
             if url_str.len() > prefix_len {
                 segments.push(TextSegment::Link {
@@ -179,12 +186,10 @@ mod tests {
     fn test_tokenize_line() {
         let line = r"Hello /path/with\ space\ here and there";
         let tokens = tokenize_line(line);
-        assert_eq!(tokens, vec![
-            "Hello",
-            r"/path/with\ space\ here",
-            "and",
-            "there"
-        ]);
+        assert_eq!(
+            tokens,
+            vec!["Hello", r"/path/with\ space\ here", "and", "there"]
+        );
     }
 
     #[test]
@@ -192,7 +197,9 @@ mod tests {
         let text = r"This is a long description with /some/path\ with\ space inside it.";
         let wrapped = wrap_text_by_words(text, 25);
         assert!(wrapped.len() > 1);
-        assert!(wrapped.iter().any(|line| line.contains(r"/some/path\ with\ space")));
+        assert!(wrapped
+            .iter()
+            .any(|line| line.contains(r"/some/path\ with\ space")));
     }
 
     #[test]
@@ -201,11 +208,19 @@ mod tests {
         let segments = parse_links(line);
         assert_eq!(segments.len(), 4);
         assert_eq!(segments[0], TextSegment::Plain("Check out ".to_string()));
-        assert_eq!(segments[1], TextSegment::Link {
-            url: "https://clickup.com".to_string(),
-            text: "https://clickup.com".to_string()
-        });
-        assert_eq!(segments[2], TextSegment::Plain(r" and /var/folders/Screenshot\ 1.png but not list/get or ".to_string()));
+        assert_eq!(
+            segments[1],
+            TextSegment::Link {
+                url: "https://clickup.com".to_string(),
+                text: "https://clickup.com".to_string()
+            }
+        );
+        assert_eq!(
+            segments[2],
+            TextSegment::Plain(
+                r" and /var/folders/Screenshot\ 1.png but not list/get or ".to_string()
+            )
+        );
         assert_eq!(segments[3], TextSegment::Plain("https://".to_string()));
     }
 }
